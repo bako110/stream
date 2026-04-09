@@ -39,11 +39,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 async def init_db() -> None:
     async with engine.begin() as conn:
-        from app.models import (
-            user, content, season, episode,
-            video, concert, subscription,
-            payment, ticket, watch_history,
-        )
+        import app.models  # ← charge le __init__.py dans le bon ordre
         await conn.run_sync(Base.metadata.create_all)
 
 async def check_db_connection() -> bool:
@@ -52,4 +48,4 @@ async def check_db_connection() -> bool:
             await session.execute(text("SELECT 1"))
         return True
     except Exception:
-        return Fasslse
+        return False
