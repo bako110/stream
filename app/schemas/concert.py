@@ -2,8 +2,11 @@ from pydantic import BaseModel, UUID4
 from typing import Optional
 from datetime import datetime
 from decimal import Decimal
-from app.models.concert import ConcertType, AccessType, ConcertStatus
 
+from app.db.postgres.models.concert import ConcertType, AccessType, ConcertStatus
+
+
+# ─── Création / mise à jour ───────────────────────────────────────────────────
 
 class ConcertCreate(BaseModel):
     title: str
@@ -35,8 +38,12 @@ class ConcertUpdate(BaseModel):
     status: Optional[ConcertStatus] = None
 
 
+# ─── Réponses ─────────────────────────────────────────────────────────────────
+
 class ConcertResponse(BaseModel):
+    """Réponse complète d'un concert."""
     id: UUID4
+    artist_id: UUID4
     title: str
     description: Optional[str] = None
     genre: Optional[str] = None
@@ -54,7 +61,6 @@ class ConcertResponse(BaseModel):
     view_count: int
     thumbnail_url: Optional[str] = None
     banner_url: Optional[str] = None
-    artist_id: UUID4
     is_featured: bool
     published_at: Optional[datetime] = None
     created_at: datetime
@@ -62,8 +68,10 @@ class ConcertResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class ConcertList(BaseModel):
+class ConcertListItem(BaseModel):
+    """Item dans une liste paginée de concerts — champs essentiels seulement."""
     id: UUID4
+    artist_id: UUID4
     title: str
     genre: Optional[str] = None
     scheduled_at: datetime
@@ -72,7 +80,14 @@ class ConcertList(BaseModel):
     status: ConcertStatus
     ticket_price: Optional[Decimal] = None
     thumbnail_url: Optional[str] = None
-    artist_id: UUID4
     is_featured: bool
 
     model_config = {"from_attributes": True}
+
+
+class ConcertListResponse(BaseModel):
+    """Réponse paginée pour les listes de concerts."""
+    items: list[ConcertListItem]
+    total: int
+    page: int
+    limit: int

@@ -1,70 +1,24 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-import uuid
+from fastapi import APIRouter, Depends, Query
+from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from app.database import get_db
+from app.db.mongo.session import get_mongo
 from app.deps import get_current_active_user
-from app.models.user import User
-from app.models.video import Video
-from app.models.watch_history import WatchHistory
+from app.db.postgres.models.user import User
+from app.services.streaming_service import StreamingService
 
 router = APIRouter()
 
 
 @router.get("/{video_id}/manifest")
-async def get_manifest(
-    video_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-):
-    result = await db.execute(select(Video).where(Video.id == video_id))
-    video = result.scalar_one_or_none()
-    if not video:
-        raise HTTPException(status_code=404, detail="Vidéo non trouvée")
-    if not video.hls_url:
-        raise HTTPException(status_code=404, detail="Vidéo non disponible")
-    return {"manifest_url": video.hls_url}
+async def get_manifest(video_id: str, mongo: AsyncIOMotorDatabase = Depends(get_mongo), current_user: User = Depends(get_current_active_user)):
+    return await StreamingService.get_manifest(video_id, mongo)
 
 
 @router.post("/{video_id}/progress")
-async def save_progress(
-    video_id: uuid.UUID,
-    progress_sec: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-):
-    result = await db.execute(
-        select(WatchHistory).where(
-            WatchHistory.video_id == video_id,
-            WatchHistory.user_id == current_user.id,
-        )
-    )
-    history = result.scalar_one_or_none()
-    if history:
-        history.progress_sec = progress_sec
-    else:
-        history = WatchHistory(
-            user_id=current_user.id,
-            video_id=video_id,
-            progress_sec=progress_sec,
-        )
-        db.add(history)
-    await db.commit()
-    return {"status": "saved", "progress_sec": progress_sec}
+async def save_progress(video_id: str, progress_sec: int = Query(..., ge=0), mongo: AsyncIOMotorDatabase = Depends(get_mongo), current_user: User = Depends(get_current_active_user)):
+    return await StreamingService.save_progress(video_id, progress_sec, current_user, mongo)
 
 
 @router.get("/{video_id}/progress")
-async def get_progress(
-    video_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-):
-    result = await db.execute(
-        select(WatchHistory).where(
-            WatchHistory.video_id == video_id,
-            WatchHistory.user_id == current_user.id,
-        )
-    )
-    history = result.scalar_one_or_none()
-    return {"progress_sec": history.progress_sec if history else 0}
+async def get_progress(video_id: str, mongo: AsyncIOMotorDatabase = Depends(get_mongo), current_user: User = Depends(get_current_active_user)):
+    return await StreamingService.get_progress(video_id, current_user, mongo)

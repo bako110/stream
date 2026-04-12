@@ -8,6 +8,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
+        extra="ignore",
     )
 
     # Application
@@ -16,8 +17,12 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
 
-    # Base de données
+    # ─── PostgreSQL ───────────────────────────────────────────────────────────────────────
     DATABASE_URL: str = "postgresql+asyncpg://user:password@localhost:5432/streaming"
+
+    # ─── MongoDB (données lourdes : vidéos, watch history, catalogue enrichi) ─────────
+    MONGODB_URL: str = "mongodb://localhost:27017"
+    MONGODB_DB_NAME: str = "streaming_media"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"

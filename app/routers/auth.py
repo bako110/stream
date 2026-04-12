@@ -1,89 +1,62 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from datetime import datetime
 
-from app.database import get_db 
-from app.models.user import User, UserRole  
-from app.schemas.user import (
-    UserCreate, UserResponse, LoginRequest,
-    Token, TokenRefresh, PasswordChange,
-)
-from app.utils.password import hash_password, verify_password
-from app.utils.jwt import create_access_token, create_refresh_token, decode_refresh_token
+from app.db.postgres.session import get_db
 from app.deps import get_current_user
+from app.db.postgres.models.user import User
+from app.schemas.user import (
+    UserRegister, UserResponse, LoginRequest, Token,
+    TokenRefresh, PasswordChange, OAuthLoginRequest,
+)
+from app.services.auth_service import AuthService
+from app.services.oauth_service import OAuthService
 
 router = APIRouter()
 
 
+# ── Inscription ───────────────────────────────────────────────────────────────
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
-    # Vérifier unicité email
-    result = await db.execute(select(User).where(User.email == payload.email))
-    if result.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Email déjà utilisé")
+async def register(payload: UserRegister, db: AsyncSession = Depends(get_db)):
+    """
+    Inscription classique.
+    - Champs obligatoires : first_name, last_name, email, password
+    - username optionnel (auto-généré prénom+nom si absent)
+    """
+    return await AuthService.register(payload, db)
 
-    # Vérifier unicité username
-    result = await db.execute(select(User).where(User.username == payload.username))
-    if result.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Username déjà utilisé")
 
-    user = User(
-        email=payload.email,
-        username=payload.username,
-        password_hash=hash_password(payload.password),
-        role=payload.role,
-        artist_name=payload.artist_name,
-        bio=payload.bio,
-    )
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
-    return user
-
+# ── Connexion ─────────────────────────────────────────────────────────────────
 
 @router.post("/login", response_model=Token)
 async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == payload.email))
-    user = result.scalar_one_or_none()
-
-    if not user or not user.password_hash:
-        raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
-    if not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
-    if not user.is_active:
-        raise HTTPException(status_code=403, detail="Compte désactivé")
-
-    # Mettre à jour last_login_at
-    user.last_login_at = datetime.utcnow()
-    await db.commit()
-
-    token_data = {"sub": str(user.id), "role": user.role.value}
-    return Token(
-        access_token=create_access_token(token_data),
-        refresh_token=create_refresh_token(token_data),
-    )
+    """
+    Connexion avec email OU username + mot de passe.
+    - identifier : adresse email ou username
+    """
+    return Token(**await AuthService.login(payload, db))
 
 
 @router.post("/refresh", response_model=Token)
 async def refresh_token(payload: TokenRefresh, db: AsyncSession = Depends(get_db)):
-    decoded = decode_refresh_token(payload.refresh_token)
-    if not decoded:
-        raise HTTPException(status_code=401, detail="Refresh token invalide ou expiré")
+    return Token(**await AuthService.refresh(payload.refresh_token, db))
 
-    user_id = decoded.get("sub")
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
 
-    if not user or not user.is_active:
-        raise HTTPException(status_code=401, detail="Utilisateur introuvable ou inactif")
+# ── OAuth Google / Facebook ───────────────────────────────────────────────────
 
-    token_data = {"sub": str(user.id), "role": user.role.value}
-    return Token(
-        access_token=create_access_token(token_data),
-        refresh_token=create_refresh_token(token_data),
-    )
+@router.post("/oauth/google", response_model=Token)
+async def oauth_google(payload: OAuthLoginRequest, db: AsyncSession = Depends(get_db)):
+    """Connexion / inscription via Google (access_token depuis SDK Google)."""
+    return Token(**await OAuthService.google_login(payload.access_token, db))
 
+
+@router.post("/oauth/facebook", response_model=Token)
+async def oauth_facebook(payload: OAuthLoginRequest, db: AsyncSession = Depends(get_db)):
+    """Connexion / inscription via Facebook (access_token depuis SDK Facebook)."""
+    return Token(**await OAuthService.facebook_login(payload.access_token, db))
+
+
+# ── Profil courant ────────────────────────────────────────────────────────────
 
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user)):
@@ -96,16 +69,9 @@ async def change_password(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    if not verify_password(payload.current_password, current_user.password_hash):
-        raise HTTPException(status_code=400, detail="Mot de passe actuel incorrect")
-
-    current_user.password_hash = hash_password(payload.new_password)
-    await db.commit()
+    await AuthService.change_password(payload.current_password, payload.new_password, current_user, db)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(current_user: User = Depends(get_current_user)):
-    # Avec JWT stateless, le logout côté serveur est géré par le client
-    # (suppression du token en mémoire + cookie HttpOnly)
-    # Pour une blacklist Redis, ajouter ici : redis.setex(token, ttl, "blacklisted")
-    pass
+    pass  # JWT stateless — côté client : supprimer le token

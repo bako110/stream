@@ -1,8 +1,11 @@
 from pydantic import BaseModel, UUID4
 from typing import Optional, Any
 from datetime import datetime
-from app.models.content import ContentType, ContentStatus
 
+from app.db.postgres.models.content import ContentType, ContentStatus
+
+
+# ─── Création / mise à jour ───────────────────────────────────────────────────
 
 class ContentCreate(BaseModel):
     title: str
@@ -11,10 +14,10 @@ class ContentCreate(BaseModel):
     synopsis: Optional[str] = None
     short_synopsis: Optional[str] = None
     director: Optional[str] = None
-    cast: Optional[Any] = None
+    cast: Optional[Any] = None          # JSONB libre : [{"name": "...", "role": "..."}]
     language: str = "fr"
     country: Optional[str] = None
-    rating: Optional[str] = None
+    rating: Optional[str] = None        # "PG-13", "R", "U"...
     is_premium: bool = False
     price: Optional[float] = None
     status: ContentStatus = ContentStatus.draft
@@ -34,6 +37,8 @@ class ContentUpdate(BaseModel):
     banner_url: Optional[str] = None
     trailer_url: Optional[str] = None
 
+
+# ─── Réponses ─────────────────────────────────────────────────────────────────
 
 class ContentResponse(BaseModel):
     id: UUID4
@@ -64,7 +69,8 @@ class ContentResponse(BaseModel):
 
 
 class ContentListResponse(BaseModel):
+    """Réponse paginée pour les listes de films / séries."""
     items: list[ContentResponse]
     total: int
     page: int
-    limit: int  
+    limit: int
