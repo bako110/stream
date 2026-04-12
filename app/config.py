@@ -56,10 +56,7 @@ class Settings(BaseSettings):
     EMAIL_FROM: str = "noreply@yourplatform.com"
 
     # CORS
-    CORS_ORIGINS: List[str] = [
-        "http://localhost:3000",
-        "http://localhost:8081",
-    ]
+    CORS_ORIGINS: List[str] = ["*"]
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
