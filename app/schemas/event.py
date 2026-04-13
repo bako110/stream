@@ -1,5 +1,5 @@
-from pydantic import BaseModel, UUID4
-from typing import Optional
+from pydantic import BaseModel, UUID4, field_validator
+from typing import Optional, Union
 from datetime import datetime
 from decimal import Decimal
 
@@ -20,12 +20,26 @@ class EventCreate(BaseModel):
     venue_country: str
     is_online: bool = False
     online_url: Optional[str] = None
-    starts_at: datetime
-    ends_at: Optional[datetime] = None
+    starts_at: Union[datetime, str]
+    ends_at: Optional[Union[datetime, str]] = None
     ticket_price: Optional[Decimal] = None
     max_attendees: Optional[int] = None
     thumbnail_url: Optional[str] = None
     banner_url: Optional[str] = None
+
+    @field_validator('starts_at', 'ends_at', mode='before')
+    @classmethod
+    def parse_datetime(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, datetime):
+            return v
+        if isinstance(v, str):
+            try:
+                return datetime.fromisoformat(v.replace('Z', '+00:00'))
+            except ValueError:
+                raise ValueError(f'Invalid datetime format: {v}')
+        return v
 
 
 class EventUpdate(BaseModel):
