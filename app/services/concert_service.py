@@ -9,18 +9,20 @@ from fastapi import HTTPException
 from app.db.postgres.models.user import User
 from app.db.postgres.models.concert import Concert, ConcertStatus
 from app.schemas.concert import ConcertCreate, ConcertUpdate
+from app.utils.cache import cache_invalidate_prefix  # noqa: F401
 
 
 class ConcertService:
 
     @staticmethod
     async def list_concerts(page: int, limit: int, genre: Optional[str], db: AsyncSession) -> dict:
-        query = select(Concert).where(Concert.status == ConcertStatus.published)
+        query = select(Concert)
         if genre:
             query = query.where(Concert.genre == genre)
         total = await db.scalar(select(func.count()).select_from(query.subquery()))
         result = await db.execute(query.offset((page - 1) * limit).limit(limit))
-        return {"items": result.scalars().all(), "total": total, "page": page, "limit": limit}
+        items = result.scalars().all()
+        return {"items": items, "total": total, "page": page, "limit": limit}
 
     @staticmethod
     async def get_live_concerts(db: AsyncSession) -> list:
@@ -58,6 +60,7 @@ class ConcertService:
             "viewer_snapshots": [],
             "created_at": datetime.utcnow(), "updated_at": datetime.utcnow(),
         })
+        await cache_invalidate_prefix("concerts:")
         return concert
 
     @staticmethod
@@ -76,6 +79,7 @@ class ConcertService:
             setattr(concert, key, value)
         await db.commit()
         await db.refresh(concert)
+        await cache_invalidate_prefix("concerts:")
         return concert
 
     @staticmethod
@@ -88,6 +92,7 @@ class ConcertService:
         await db.delete(concert)
         await db.commit()
         await mongo["concert_streams"].delete_one({"concert_id": str(concert_id)})
+        await cache_invalidate_prefix("concerts:")
 
     @staticmethod
     async def publish_concert(concert_id: uuid.UUID, user: User, db: AsyncSession) -> Concert:
@@ -100,6 +105,7 @@ class ConcertService:
         concert.published_at = datetime.utcnow()
         await db.commit()
         await db.refresh(concert)
+        await cache_invalidate_prefix("concerts:")
         return concert
 
     @staticmethod
@@ -112,4 +118,5 @@ class ConcertService:
         concert.status = new_status
         await db.commit()
         await db.refresh(concert)
+        await cache_invalidate_prefix("concerts:")
         return concert

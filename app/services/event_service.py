@@ -9,13 +9,14 @@ from app.db.postgres.models.event_ticket import EventTicket
 from app.db.postgres.models.ticket import TicketStatus
 from app.db.postgres.models.user import User
 from app.schemas.event import EventCreate, EventUpdate
+from app.utils.cache import cache_invalidate_prefix
 
 
 class EventService:
 
     @staticmethod
     async def list_events(page: int, limit: int, event_type: str | None, city: str | None, db: AsyncSession) -> dict:
-        query = select(Event).where(Event.status == EventStatus.published)
+        query = select(Event)
         if event_type:
             query = query.where(Event.event_type == event_type)
         if city:
@@ -23,7 +24,8 @@ class EventService:
         query = query.order_by(Event.starts_at)
         total = await db.scalar(select(func.count()).select_from(query.subquery()))
         result = await db.execute(query.offset((page - 1) * limit).limit(limit))
-        return {"items": result.scalars().all(), "total": total, "page": page, "limit": limit}
+        items = result.scalars().all()
+        return {"items": items, "total": total, "page": page, "limit": limit}
 
     @staticmethod
     async def get_event(event_id: uuid.UUID, db: AsyncSession) -> Event:
@@ -39,6 +41,7 @@ class EventService:
         db.add(event)
         await db.commit()
         await db.refresh(event)
+        await cache_invalidate_prefix("events:")
         return event
 
     @staticmethod
@@ -57,6 +60,7 @@ class EventService:
             setattr(event, key, value)
         await db.commit()
         await db.refresh(event)
+        await cache_invalidate_prefix("events:")
         return event
 
     @staticmethod
@@ -70,6 +74,7 @@ class EventService:
         event.published_at = datetime.utcnow()
         await db.commit()
         await db.refresh(event)
+        await cache_invalidate_prefix("events:")
         return event
 
     @staticmethod
@@ -81,6 +86,7 @@ class EventService:
         EventService._check_owner(event, user)
         await db.delete(event)
         await db.commit()
+        await cache_invalidate_prefix("events:")
 
     # ── Billets événement ────────────────────────────────────────────────────
 
