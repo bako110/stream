@@ -468,15 +468,18 @@ async def delete_user(
 
 @router.get("/me/verification", response_model=VerificationStatusResponse)
 async def get_verification_status(
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """Statut de vérification de l'utilisateur connecté."""
+    result = await db.execute(select(User).where(User.id == current_user.id))
+    user = result.scalar_one()
     return VerificationStatusResponse(
-        status=current_user.verification_status,
-        is_verified=current_user.is_verified,
-        note=current_user.verification_note,
-        requested_at=current_user.verification_requested_at,
-        reviewed_at=current_user.verification_reviewed_at,
+        status=user.verification_status or VerificationStatus.none,
+        is_verified=user.is_verified,
+        note=user.verification_note,
+        requested_at=user.verification_requested_at,
+        reviewed_at=user.verification_reviewed_at,
     )
 
 
@@ -490,24 +493,27 @@ async def request_verification(
     from fastapi import HTTPException
     from datetime import datetime
 
-    if current_user.is_verified:
+    result = await db.execute(select(User).where(User.id == current_user.id))
+    user = result.scalar_one()
+
+    if user.is_verified:
         raise HTTPException(400, "Votre compte est déjà vérifié")
-    if current_user.verification_status == VerificationStatus.pending:
+    if user.verification_status == VerificationStatus.pending:
         raise HTTPException(400, "Une demande est déjà en cours d'examen")
 
-    current_user.verification_status = VerificationStatus.pending
-    current_user.verification_note = payload.note
-    current_user.verification_requested_at = datetime.utcnow()
-    current_user.verification_reviewed_at = None
+    user.verification_status = VerificationStatus.pending
+    user.verification_note = payload.note
+    user.verification_requested_at = datetime.utcnow()
+    user.verification_reviewed_at = None
     await db.commit()
-    await db.refresh(current_user)
+    await db.refresh(user)
 
     return VerificationStatusResponse(
-        status=current_user.verification_status,
-        is_verified=current_user.is_verified,
-        note=current_user.verification_note,
-        requested_at=current_user.verification_requested_at,
-        reviewed_at=current_user.verification_reviewed_at,
+        status=user.verification_status,
+        is_verified=user.is_verified,
+        note=user.verification_note,
+        requested_at=user.verification_requested_at,
+        reviewed_at=user.verification_reviewed_at,
     )
 
 
