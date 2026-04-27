@@ -412,11 +412,12 @@ async def list_conversations(
             partner = await UserService.get_by_id(uuid.UUID(partner_id), pg)
             online = manager.is_online(partner_id)
             partner_info = {
-                "id":         str(partner.id),
-                "username":   partner.username or str(partner.id)[:8],
-                "full_name":  " ".join(p for p in [partner.first_name, partner.last_name] if p) or partner.display_name,
-                "avatar_url": partner.avatar_url,
-                "is_online":  online,
+                "id":          str(partner.id),
+                "username":    partner.username or str(partner.id)[:8],
+                "full_name":   " ".join(p for p in [partner.first_name, partner.last_name] if p) or partner.display_name,
+                "avatar_url":  partner.avatar_url,
+                "is_online":   online,
+                "is_verified": partner.is_verified,
                 "last_seen_at": partner.last_seen_at.isoformat() if partner.last_seen_at else None,
             }
         except Exception:
