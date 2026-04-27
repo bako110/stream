@@ -44,7 +44,7 @@ class VideoService:
         payload = data.model_dump()
         doc = {
             **base,
-            "transcode_status": "ready" if payload.get("hls_url") else "pending",
+            "transcode_status": "done" if payload.get("hls_url") else "pending",
             "transcode_progress": 100 if payload.get("hls_url") else 0,
             "hls_480p_url": None,
             "hls_720p_url": None, "hls_1080p_url": None,
