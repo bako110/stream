@@ -28,9 +28,10 @@ BASE_URL = settings.MEDIA_BASE_URL.rstrip("/")
 ALLOWED_MIME = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 ALLOWED_VIDEO_MIME = {"video/mp4", "video/quicktime", "video/x-m4v"}
 ALLOWED_AUDIO_MIME = {"audio/mpeg", "audio/mp4", "audio/aac", "audio/x-m4a", "audio/mp3", "audio/wav", "audio/ogg"}
-MAX_FILE_SIZE = 10 * 1024 * 1024   # 10 MB
-MAX_VIDEO_SIZE = 100 * 1024 * 1024  # 100 MB
-MAX_AUDIO_SIZE = 25 * 1024 * 1024   # 25 MB
+MAX_FILE_SIZE  =    10 * 1024 * 1024   #   10 MB  images
+MAX_VIDEO_SIZE = 8 * 1024 * 1024 * 1024  #    8 GB  vidéos/films/séries
+MAX_AUDIO_SIZE =    25 * 1024 * 1024   #   25 MB  audio
+CHUNK_SIZE     = 8 * 1024 * 1024       #    8 MB  chunk streaming
 
 MIME_EXT = {
     "image/jpeg": ".jpg",
@@ -129,14 +130,39 @@ async def upload_video(file: UploadFile, folder: str) -> dict:
             detail=f"Type de fichier non supporté : {file.content_type}. "
                    f"Formats acceptés : MP4, MOV, M4V",
         )
-    content = await file.read()
-    if len(content) > MAX_VIDEO_SIZE:
-        raise HTTPException(
-            status_code=413,
-            detail=f"Fichier trop volumineux ({len(content) // (1024*1024)} MB). Maximum : 100 MB",
-        )
-    url, public_id = _save_file(content, folder, file.content_type)
-    video_path = UPLOAD_DIR / public_id
+
+    # Écriture en streaming par chunks — ne charge pas tout en RAM
+    ext = MIME_EXT.get(file.content_type, ".mp4")
+    filename = f"{uuid.uuid4().hex}{ext}"
+    dest_dir = UPLOAD_DIR / folder
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = dest_dir / filename
+
+    total_size = 0
+    try:
+        with dest_path.open("wb") as f:
+            while True:
+                chunk = await file.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                total_size += len(chunk)
+                if total_size > MAX_VIDEO_SIZE:
+                    f.close()
+                    dest_path.unlink(missing_ok=True)
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Fichier trop volumineux. Maximum : 8 GB",
+                    )
+                f.write(chunk)
+    except HTTPException:
+        raise
+    except Exception as e:
+        dest_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"Erreur lors de l'upload : {e}")
+
+    public_id = f"{folder}/{filename}"
+    url = f"{BASE_URL}/uploads/{public_id}"
+    video_path = dest_path
 
     # Génération thumbnail + durée via ffmpeg (dans un thread pour ne pas bloquer)
     thumb_name = video_path.stem + "_thumb.jpg"
