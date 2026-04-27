@@ -88,7 +88,12 @@ async def get_user_reels(user_id: uuid.UUID, db: AsyncSession = Depends(get_db))
 
 @router.get("/{reel_id}", response_model=ReelResponse)
 async def get_reel(reel_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    return await ReelService.get_reel(reel_id, db)
+    ck = f"reel:{reel_id}"
+    if (cached := await cache_get(ck)) is not None:
+        return cached
+    result = await ReelService.get_reel(reel_id, db)
+    await cache_set(ck, ReelResponse.model_validate(result).model_dump(mode="json"), ttl=60)
+    return result
 
 
 @router.post("/{reel_id}/view", status_code=204)
@@ -137,6 +142,7 @@ async def update_reel(
 ):
     result = await ReelService.update_reel(reel_id, data, current_user, db)
     await cache_invalidate_prefix("reels:")
+    await cache_invalidate_prefix(f"reel:{reel_id}")
     return result
 
 
@@ -148,3 +154,4 @@ async def delete_reel(
 ):
     await ReelService.delete_reel(reel_id, current_user, db)
     await cache_invalidate_prefix("reels:")
+    await cache_invalidate_prefix(f"reel:{reel_id}")

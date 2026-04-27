@@ -85,7 +85,12 @@ async def my_events(
 
 @router.get("/{event_id}", response_model=EventResponse)
 async def get_event(event_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    return await EventService.get_event(event_id, db)
+    ck = f"event:{event_id}"
+    if (cached := await cache_get(ck)) is not None:
+        return cached
+    result = await EventService.get_event(event_id, db)
+    await cache_set(ck, EventResponse.model_validate(result).model_dump(mode="json"), ttl=120)
+    return result
 
 
 @router.post("", response_model=EventResponse, status_code=201)
@@ -122,6 +127,7 @@ async def update_event(
     await cache_invalidate_prefix("events:")
     await cache_invalidate_prefix("fil_utilisateur:")
     await cache_invalidate_prefix("fil_anonymous:")
+    await cache_invalidate_prefix(f"event:{event_id}")
     return result
 
 
@@ -135,6 +141,7 @@ async def publish_event(
     await cache_invalidate_prefix("events:")
     await cache_invalidate_prefix("fil_utilisateur:")
     await cache_invalidate_prefix("fil_anonymous:")
+    await cache_invalidate_prefix(f"event:{event_id}")
     return result
 
 
@@ -148,6 +155,7 @@ async def delete_event(
     await cache_invalidate_prefix("events:")
     await cache_invalidate_prefix("fil_utilisateur:")
     await cache_invalidate_prefix("fil_anonymous:")
+    await cache_invalidate_prefix(f"event:{event_id}")
 
 
 # ── Billets ────────────────────────────────────────────────────────────────

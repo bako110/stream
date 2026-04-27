@@ -9,6 +9,7 @@ from app.deps import get_current_user
 from app.services.community_service import CommunityService
 from app.services.ws_manager import community_manager
 from app.utils.jwt import decode_access_token
+from app.utils.cache import cache_get, cache_set, cache_invalidate_prefix
 
 router = APIRouter(tags=["Communities"])
 
@@ -48,6 +49,7 @@ async def create_community(body: CommunityCreate, user=Depends(get_current_user)
         description=body.description, is_private=body.is_private,
         avatar_url=body.avatar_url, banner_url=body.banner_url,
     )
+    await cache_invalidate_prefix("communities:list:")
     return _serialize(community)
 
 
@@ -56,8 +58,13 @@ async def list_communities(
     page: int = Query(1, ge=1), limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
+    ck = f"communities:list:p{page}:l{limit}"
+    if (cached := await cache_get(ck)) is not None:
+        return cached
     communities = await CommunityService.list_all(db, page=page, limit=limit)
-    return [_serialize(c) for c in communities]
+    serialized = [_serialize(c) for c in communities]
+    await cache_set(ck, serialized, ttl=120)
+    return serialized
 
 
 @router.get("/me")
@@ -68,21 +75,30 @@ async def my_communities(user=Depends(get_current_user), db: AsyncSession = Depe
 
 @router.get("/{community_id}")
 async def get_community(community_id: str, db: AsyncSession = Depends(get_db)):
+    ck = f"community:{community_id}"
+    if (cached := await cache_get(ck)) is not None:
+        return cached
     c = await CommunityService.get_by_id(_uuid.UUID(community_id), db)
     if not c:
         raise HTTPException(status_code=404, detail="Community not found")
-    return _serialize(c)
+    serialized = _serialize(c)
+    await cache_set(ck, serialized, ttl=120)
+    return serialized
 
 
 @router.post("/{community_id}/join")
 async def join_community(community_id: str, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     joined = await CommunityService.join(_uuid.UUID(community_id), user.id, db)
+    await cache_invalidate_prefix(f"community:{community_id}")
+    await cache_invalidate_prefix("communities:list:")
     return {"joined": joined}
 
 
 @router.post("/{community_id}/leave")
 async def leave_community(community_id: str, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     left = await CommunityService.leave(_uuid.UUID(community_id), user.id, db)
+    await cache_invalidate_prefix(f"community:{community_id}")
+    await cache_invalidate_prefix("communities:list:")
     return {"left": left}
 
 

@@ -94,7 +94,12 @@ async def list_films_admin(
 
 @router.get("/films/{content_id}", response_model=ContentResponse)
 async def get_film(content_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    return await ContentService.get_film(content_id, db)
+    ck = f"film:{content_id}"
+    if (cached := await cache_get(ck)) is not None:
+        return cached
+    result = await ContentService.get_film(content_id, db)
+    await cache_set(ck, ContentResponse.model_validate(result).model_dump(mode="json"), ttl=300)
+    return result
 
 
 # ── Films — admin ─────────────────────────────────────────────────────────────
@@ -121,6 +126,8 @@ async def update_film(
     result = await ContentService.update_content(content_id, data, db)
     await cache_invalidate_prefix("films:")
     await cache_invalidate_prefix("series:")
+    await cache_invalidate_prefix(f"film:{content_id}")
+    await cache_invalidate_prefix(f"serie:{content_id}")
     return result
 
 
@@ -133,6 +140,8 @@ async def publish_film(
     result = await ContentService.toggle_publish(content_id, db)
     await cache_invalidate_prefix("films:")
     await cache_invalidate_prefix("series:")
+    await cache_invalidate_prefix(f"film:{content_id}")
+    await cache_invalidate_prefix(f"serie:{content_id}")
     return result
 
 
@@ -145,6 +154,8 @@ async def delete_film(
     await ContentService.delete_content(content_id, db)
     await cache_invalidate_prefix("films:")
     await cache_invalidate_prefix("series:")
+    await cache_invalidate_prefix(f"film:{content_id}")
+    await cache_invalidate_prefix(f"serie:{content_id}")
 
 
 # ── Séries — public ───────────────────────────────────────────────────────────
@@ -184,7 +195,12 @@ async def list_series_admin(
 
 @router.get("/series/{content_id}", response_model=ContentResponse)
 async def get_serie(content_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    return await ContentService.get_serie(content_id, db)
+    ck = f"serie:{content_id}"
+    if (cached := await cache_get(ck)) is not None:
+        return cached
+    result = await ContentService.get_serie(content_id, db)
+    await cache_set(ck, ContentResponse.model_validate(result).model_dump(mode="json"), ttl=300)
+    return result
 
 
 # ── Séries — admin ────────────────────────────────────────────────────────────
