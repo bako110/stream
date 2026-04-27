@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "679923149254",
+    "project_id": "folyx-94d72",
+    "storage_bucket": "folyx-94d72.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:679923149254:android:077926f7e01b7e58652ac7",
+        "android_client_info": {
+          "package_name": "com.stream_mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCB1IxMR-yNWRsFqDb2zJg75FI2CWISHxI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
