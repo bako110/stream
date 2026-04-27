@@ -12,12 +12,15 @@ from app.schemas.content import ContentCreate, ContentUpdate
 class ContentService:
 
     @staticmethod
-    async def list_films(page: int, limit: int, year: Optional[int], language: Optional[str], db: AsyncSession) -> dict:
-        query = select(Content).where(Content.type == ContentType.film, Content.status == ContentStatus.published)
+    async def list_films(page: int, limit: int, year: Optional[int], language: Optional[str], db: AsyncSession, admin: bool = False) -> dict:
+        query = select(Content).where(Content.type == ContentType.film)
+        if not admin:
+            query = query.where(Content.status == ContentStatus.published)
         if year:
             query = query.where(Content.year == year)
         if language:
             query = query.where(Content.language == language)
+        query = query.order_by(Content.created_at.desc())
         total = await db.scalar(select(func.count()).select_from(query.subquery()))
         result = await db.execute(query.offset((page - 1) * limit).limit(limit))
         return {"items": result.scalars().all(), "total": total, "page": page, "limit": limit}
@@ -43,8 +46,11 @@ class ContentService:
         return film
 
     @staticmethod
-    async def list_series(page: int, limit: int, db: AsyncSession) -> dict:
-        query = select(Content).where(Content.type == ContentType.serie, Content.status == ContentStatus.published)
+    async def list_series(page: int, limit: int, db: AsyncSession, admin: bool = False) -> dict:
+        query = select(Content).where(Content.type == ContentType.serie)
+        if not admin:
+            query = query.where(Content.status == ContentStatus.published)
+        query = query.order_by(Content.created_at.desc())
         total = await db.scalar(select(func.count()).select_from(query.subquery()))
         result = await db.execute(query.offset((page - 1) * limit).limit(limit))
         return {"items": result.scalars().all(), "total": total, "page": page, "limit": limit}

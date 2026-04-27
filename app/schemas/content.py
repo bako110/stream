@@ -14,10 +14,13 @@ class ContentCreate(BaseModel):
     synopsis: Optional[str] = None
     short_synopsis: Optional[str] = None
     director: Optional[str] = None
-    cast: Optional[Any] = None          # JSONB libre : [{"name": "...", "role": "..."}]
+    cast: Optional[Any] = None
     language: str = "fr"
     country: Optional[str] = None
-    rating: Optional[str] = None        # "PG-13", "R", "U"...
+    rating: Optional[str] = None
+    thumbnail_url: Optional[str] = None
+    banner_url: Optional[str] = None
+    trailer_url: Optional[str] = None
     is_premium: bool = False
     price: Optional[float] = None
     status: ContentStatus = ContentStatus.draft
