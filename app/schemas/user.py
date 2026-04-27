@@ -211,6 +211,31 @@ class PasswordChange(BaseModel):
         return v
 
 
+# ─── Forgot / Reset password ─────────────────────────────────────────────────
+
+class ForgotPasswordRequest(BaseModel):
+    """Au moins un identifiant parmi email, phone, username."""
+    email:    Optional[str] = None
+    phone:    Optional[str] = None
+    username: Optional[str] = None
+
+    def model_post_init(self, __context: object) -> None:
+        if not self.email and not self.phone and not self.username:
+            raise ValueError("Email, téléphone ou nom d'utilisateur requis")
+
+
+class ResetPasswordRequest(BaseModel):
+    token:        str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Le mot de passe doit faire au moins 8 caractères")
+        return v
+
+
 # ─── QR Auth ──────────────────────────────────────────────────────────────────
 
 class QRGenerateResponse(BaseModel):

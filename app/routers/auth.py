@@ -10,10 +10,12 @@ from app.schemas.user import (
     UserRegister, UserResponse, LoginRequest, Token,
     TokenRefresh, PasswordChange, OAuthLoginRequest, LoginResponse,
     QRGenerateResponse, QRVerifyRequest, QRStatusResponse, QRLoginResponse,
+    ForgotPasswordRequest, ResetPasswordRequest,
 )
 from app.services.auth_service import AuthService
 from app.services.oauth_service import OAuthService
 from app.services.qr_auth_service import QRAuthService
+from app.services.password_reset_service import PasswordResetService
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
@@ -93,6 +95,36 @@ async def change_password(
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(current_user: User = Depends(get_current_user)):
     pass  # JWT stateless — côté client : supprimer le token
+
+
+# ── Mot de passe oublié ───────────────────────────────────────────────────────
+
+@router.post("/forgot-password")
+@limiter.limit("5/minute")
+async def forgot_password(
+    request: Request,
+    payload: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Demande de réinitialisation par email, téléphone ou username.
+    Retourne toujours { sent: true } même si le compte n'existe pas.
+    """
+    return await PasswordResetService.request_reset(payload, db)
+
+
+@router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("10/minute")
+async def reset_password(
+    request: Request,
+    payload: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Réinitialise le mot de passe avec le token reçu par email.
+    Le token est invalidé après usage (usage unique, TTL 15 min).
+    """
+    await PasswordResetService.reset_password(payload.token, payload.new_password, db)
 
 
 # ── QR Code Auth ──────────────────────────────────────────────────────────────

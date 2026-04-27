@@ -122,6 +122,36 @@ def _tpl_subscription_expiry(days_left: int, plan: str) -> str:
     """
 
 
+def _tpl_password_reset(token: str, ttl_minutes: int) -> str:
+    return f"""
+    <div style="font-family:sans-serif;max-width:560px;margin:auto;background:#0D0D1A;color:#fff;border-radius:16px;overflow:hidden;">
+      <div style="background:linear-gradient(135deg,#7B3FF2,#E0389A);padding:32px;text-align:center;">
+        <h1 style="margin:0;font-size:28px;letter-spacing:-1px;">FoliX</h1>
+        <p style="margin:4px 0 0;opacity:.8;font-size:13px;">Musique · Concerts · Événements</p>
+      </div>
+      <div style="padding:32px;">
+        <h2 style="color:#9B65F5;margin-top:0;">Réinitialisation du mot de passe</h2>
+        <p style="line-height:1.7;color:#ccc;">
+          Vous avez demandé à réinitialiser votre mot de passe FoliX.
+          Utilisez le code ci-dessous dans l'application.
+        </p>
+        <div style="background:#1a1a2e;border-radius:12px;padding:24px;margin:24px 0;text-align:center;">
+          <p style="margin:0;color:#aaa;font-size:12px;text-transform:uppercase;letter-spacing:2px;">Votre code</p>
+          <p style="margin:12px 0 0;font-size:36px;font-weight:900;letter-spacing:8px;color:#9B65F5;font-family:monospace;">{token[:8].upper()}</p>
+          <p style="margin:12px 0 0;color:#aaa;font-size:12px;">Valide {ttl_minutes} minutes · Usage unique</p>
+        </div>
+        <p style="color:#888;font-size:12px;line-height:1.6;">
+          Si vous n'avez pas fait cette demande, ignorez cet email.
+          Votre mot de passe ne sera pas modifié.
+        </p>
+      </div>
+      <div style="padding:16px 32px;border-top:1px solid #1a1a2e;font-size:12px;color:#555;text-align:center;">
+        Pour des raisons de sécurité, ce code expire dans {ttl_minutes} minutes.
+      </div>
+    </div>
+    """
+
+
 # ── Tâches Celery ──────────────────────────────────────────────────────────────
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
@@ -243,6 +273,18 @@ def notify_concert_live(self, concert_id: str):
         loop.run_until_complete(_run())
     finally:
         loop.close()
+
+
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=30)
+def send_password_reset_email(self, user_email: str, token: str, ttl_minutes: int = 15):
+    try:
+        _send_smtp(
+            to_email=user_email,
+            subject="Réinitialisation de votre mot de passe FoliX",
+            html=_tpl_password_reset(token, ttl_minutes),
+        )
+    except Exception as exc:
+        raise self.retry(exc=exc)
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60)

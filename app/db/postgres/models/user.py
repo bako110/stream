@@ -69,6 +69,10 @@ class User(Base):
     privacy_show_phone:      Mapped[bool] = mapped_column(Boolean, default=False)
     privacy_show_birthday:   Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # ── Réinitialisation mot de passe ─────────────────────────────────────────
+    reset_token: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    reset_token_expires: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
