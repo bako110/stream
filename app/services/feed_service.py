@@ -145,6 +145,7 @@ class FeedService:
                         "username": e.organizer.username,
                         "display_name": e.organizer.display_name,
                         "avatar_url": e.organizer.avatar_url,
+                        "is_verified": e.organizer.is_verified,
                     } if e.organizer else None,
                 },
             ))
@@ -190,6 +191,7 @@ class FeedService:
                         "username": c.artist.username,
                         "display_name": c.artist.display_name,
                         "avatar_url": c.artist.avatar_url,
+                        "is_verified": c.artist.is_verified,
                     } if c.artist else None,
                 },
             ))
@@ -226,6 +228,7 @@ class FeedService:
                         "username": r.author.username,
                         "display_name": r.author.display_name,
                         "avatar_url": r.author.avatar_url,
+                        "is_verified": r.author.is_verified,
                     } if r.author else None,
                 },
             ))
