@@ -20,9 +20,36 @@ router = APIRouter()
 async def list_reels(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
+    search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(get_optional_user),
 ):
+    # Recherche textuelle — priorité sur le feed normal
+    if search and search.strip():
+        from sqlalchemy import select as sa_select, or_
+        from sqlalchemy.orm import selectinload as sio
+        from app.db.postgres.models.reel import ReelStatus as RS
+        q = search.strip()
+        stmt = (
+            sa_select(Reel)
+            .options(sio(Reel.author))
+            .join(Reel.author)
+            .where(
+                Reel.status == RS.published,
+                or_(
+                    Reel.caption.ilike(f"%{q}%"),
+                    User.username.ilike(f"%{q}%"),
+                    User.display_name.ilike(f"%{q}%"),
+                ),
+            )
+            .order_by(Reel.view_count.desc(), Reel.created_at.desc())
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
+        res = await db.execute(stmt)
+        reels = ReelService._transform_reel_urls(list(res.scalars().all()))
+        return [ReelResponse.model_validate(r) for r in reels]
+
     if current_user:
         from app.db.postgres.models.user_block import UserBlock
         from sqlalchemy import select as sa_select
