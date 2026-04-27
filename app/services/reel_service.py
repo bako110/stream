@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, case, and_, not_, cast, Float
+from sqlalchemy import select, func, case, and_, not_, cast, Float, update as sa_update
 from sqlalchemy.orm import selectinload, make_transient
 from fastapi import HTTPException
 
@@ -150,33 +150,28 @@ class ReelService:
         """
         watch_ratio = max(0.0, min(1.0, watch_ratio))
 
-        # Vérifier si vue existante
+        # Check existing view
         result = await db.execute(
-            select(ReelView).where(
+            select(ReelView.id, ReelView.watch_ratio).where(
                 ReelView.reel_id == reel_id,
                 ReelView.viewer_id == viewer_id,
             )
         )
-        existing = result.scalar_one_or_none()
+        existing = result.first()
 
         if existing:
-            # Mettre à jour: garder le meilleur watch_ratio
-            existing.watch_ratio = max(existing.watch_ratio, watch_ratio)
-            existing.view_count += 1
-            existing.viewed_at = datetime.utcnow()
-        else:
-            # Nouvelle vue
-            view = ReelView(
-                reel_id=reel_id,
-                viewer_id=viewer_id,
-                watch_ratio=watch_ratio,
+            best_ratio = max(existing.watch_ratio, watch_ratio)
+            await db.execute(
+                sa_update(ReelView)
+                .where(ReelView.id == existing.id)
+                .values(watch_ratio=best_ratio, view_count=ReelView.view_count + 1, viewed_at=datetime.utcnow())
             )
-            db.add(view)
-            # Incrémenter le compteur global du reel
-            reel_result = await db.execute(select(Reel).where(Reel.id == reel_id))
-            reel = reel_result.scalar_one_or_none()
-            if reel:
-                reel.view_count += 1
+        else:
+            db.add(ReelView(reel_id=reel_id, viewer_id=viewer_id, watch_ratio=watch_ratio))
+            # Atomic increment — no SELECT needed
+            await db.execute(
+                sa_update(Reel).where(Reel.id == reel_id).values(view_count=Reel.view_count + 1)
+            )
 
         await db.commit()
 

@@ -640,9 +640,10 @@ class FeedService:
         service = FeedService()
         items = await service._fetch_candidates(db)
 
-        # Score simple : engagement + fraîcheur (sans intérêt ni relation)
+        # Score simple : engagement + fraîcheur — batch en 3 requêtes au lieu de N
+        all_counts = await service._get_all_engagement_counts(items, db)
         for item in items:
-            counts = await service._get_engagement_counts(item.kind, item.id, db)
+            counts = all_counts.get(item.id, {"likes": 0, "comments": 0, "shares": 0})
             view_count = item.data.get("view_count", 0) or 0
             item.score_engagement = service._calc_engagement(counts, view_count)
             item.score_freshness = service._calc_freshness(item.created_at)
