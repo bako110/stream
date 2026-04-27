@@ -33,6 +33,7 @@ class EventService:
         db: AsyncSession,
         user_lat: float | None = None, user_lon: float | None = None,
         following_ids: list | None = None,
+        organizer_ids: list | None = None,
     ) -> dict:
         query = select(Event).options(selectinload(Event.organizer))
         if event_type:
@@ -41,6 +42,8 @@ class EventService:
             query = query.where(Event.venue_city.ilike(f"%{city}%"))
         if status:
             query = query.where(Event.status == status)
+        if organizer_ids:
+            query = query.where(Event.organizer_id.in_(organizer_ids))
 
         total = await db.scalar(select(func.count()).select_from(query.subquery()))
         result = await db.execute(query.offset((page - 1) * limit * 3).limit(limit * 3))

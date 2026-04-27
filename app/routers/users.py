@@ -546,3 +546,47 @@ async def review_verification(
     await db.commit()
     await db.refresh(user)
     return user
+
+
+# ── Match contacts ────────────────────────────────────────────────────────────
+
+from pydantic import BaseModel as _BM
+import hashlib as _hashlib
+
+class ContactMatchRequest(_BM):
+    phones: list[str]
+
+class ContactMatchResponse(_BM):
+    user_ids: list[str]
+
+@router.post("/match-contacts", response_model=ContactMatchResponse)
+async def match_contacts(
+    payload: ContactMatchRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Reçoit des numéros normalisés, retourne les user_ids correspondants."""
+    if not payload.phones:
+        return ContactMatchResponse(user_ids=[])
+
+    # Normalise les numéros reçus
+    def norm(p: str) -> str:
+        return "".join(c for c in p if c.isdigit() or c == "+")
+
+    normalized_set = {norm(p) for p in payload.phones if p}
+
+    result = await db.execute(
+        select(User.id, User.phone).where(
+            User.phone.isnot(None),
+            User.id != current_user.id,
+        )
+    )
+    rows = result.all()
+
+    matched_ids = [
+        str(user_id)
+        for user_id, phone in rows
+        if norm(phone or "") in normalized_set
+    ]
+
+    return ContactMatchResponse(user_ids=matched_ids)

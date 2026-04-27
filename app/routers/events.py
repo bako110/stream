@@ -25,11 +25,12 @@ async def list_events(
     status: Optional[str] = None,
     lat: Optional[float] = Query(None),
     lon: Optional[float] = Query(None),
+    contact_ids: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    # Pas de cache si géoloc fournie (résultats personnalisés)
-    no_cache = request.headers.get("Cache-Control") == "no-cache" or lat is not None
+    # Pas de cache si géoloc ou contacts fournis (résultats personnalisés)
+    no_cache = request.headers.get("Cache-Control") == "no-cache" or lat is not None or contact_ids is not None
 
     if not no_cache:
         ck = f"events:list:p{page}:l{limit}:t{event_type or 'all'}:c{city or 'all'}:s{status or 'all'}"
@@ -44,9 +45,19 @@ async def list_events(
     )
     following_ids = [row[0] for row in following_result.fetchall()]
 
+    # Filtre contacts — liste d'UUIDs séparés par virgule
+    parsed_contact_ids = None
+    if contact_ids:
+        try:
+            import uuid as _uuid
+            parsed_contact_ids = [_uuid.UUID(i.strip()) for i in contact_ids.split(",") if i.strip()]
+        except Exception:
+            parsed_contact_ids = None
+
     result = (await EventService.list_events(
         page, limit, event_type, city, status, db,
         user_lat=lat, user_lon=lon, following_ids=following_ids,
+        organizer_ids=parsed_contact_ids,
     ))["items"]
     serialized = [EventListItem.model_validate(e).model_dump(mode="json") for e in result]
 
