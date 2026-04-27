@@ -415,11 +415,12 @@ async def list_users(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     role: Optional[str] = None,
+    verification_status: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_role("admin")),
 ):
-    """[Admin] Liste tous les utilisateurs avec filtre optionnel par rôle."""
-    return await UserService.list_users(page, limit, role, db)
+    """[Admin] Liste tous les utilisateurs avec filtres optionnels."""
+    return await UserService.list_users(page, limit, role, db, verification_status)
 
 
 @router.put("/{user_id}/role")

@@ -22,10 +22,16 @@ class UserService:
         return user
 
     @staticmethod
-    async def list_users(page: int, limit: int, role: Optional[str], db: AsyncSession) -> list:
+    async def list_users(page: int, limit: int, role: Optional[str], db: AsyncSession, verification_status: Optional[str] = None) -> list:
         query = select(User)
         if role:
             query = query.where(User.role == role)
+        if verification_status:
+            from app.db.postgres.models.user import VerificationStatus as VS
+            try:
+                query = query.where(User.verification_status == VS(verification_status))
+            except ValueError:
+                pass
         query = query.order_by(User.created_at.desc()).offset((page - 1) * limit).limit(limit)
         result = await db.execute(query)
         return result.scalars().all()
