@@ -146,6 +146,7 @@ class UserPublic(BaseModel):
     banner_url: Optional[str] = None
     location: Optional[str] = None
     website: Optional[str] = None
+    is_verified: bool = False
 
     model_config = {"from_attributes": True}
 
