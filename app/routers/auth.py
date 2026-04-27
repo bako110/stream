@@ -9,9 +9,11 @@ from app.db.postgres.models.user import User
 from app.schemas.user import (
     UserRegister, UserResponse, LoginRequest, Token,
     TokenRefresh, PasswordChange, OAuthLoginRequest, LoginResponse,
+    QRGenerateResponse, QRVerifyRequest, QRStatusResponse, QRLoginResponse,
 )
 from app.services.auth_service import AuthService
 from app.services.oauth_service import OAuthService
+from app.services.qr_auth_service import QRAuthService
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
@@ -91,3 +93,34 @@ async def change_password(
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(current_user: User = Depends(get_current_user)):
     pass  # JWT stateless — côté client : supprimer le token
+
+
+# ── QR Code Auth ──────────────────────────────────────────────────────────────
+
+@router.post("/qr/generate", response_model=QRGenerateResponse)
+async def qr_generate(current_user: User = Depends(get_current_user)):
+    """
+    Génère un token QR temporaire (120s, usage unique).
+    Nécessite d'être connecté — le QR encode l'identité de l'utilisateur.
+    """
+    return await QRAuthService.generate(current_user)
+
+
+@router.post("/qr/verify", response_model=QRLoginResponse)
+async def qr_verify(payload: QRVerifyRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Échange un token QR valide contre des JWT d'accès.
+    Le token est invalidé immédiatement après usage (usage unique).
+    """
+    return await QRAuthService.verify(payload.token, db)
+
+
+@router.get("/qr/status/{token}", response_model=QRStatusResponse)
+async def qr_status(token: str):
+    """
+    Polling : retourne l'état du token QR.
+    - pending  : en attente de scan
+    - scanned  : scanné, tokens émis sur l'autre appareil
+    - expired  : expiré ou inexistant
+    """
+    return await QRAuthService.status(token)

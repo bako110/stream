@@ -209,3 +209,25 @@ class PasswordChange(BaseModel):
         if len(v) < 8:
             raise ValueError("Le mot de passe doit faire au moins 8 caractères")
         return v
+
+
+# ─── QR Auth ──────────────────────────────────────────────────────────────────
+
+class QRGenerateResponse(BaseModel):
+    token: str
+    expires_at: str
+    ttl_seconds: int
+
+
+class QRVerifyRequest(BaseModel):
+    token: str
+
+
+class QRStatusResponse(BaseModel):
+    status: str          # "pending" | "scanned" | "expired"
+    ttl_seconds: Optional[int] = None
+
+
+class QRLoginResponse(Token):
+    """Réponse scan QR = tokens + user."""
+    user: UserResponse
