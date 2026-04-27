@@ -367,11 +367,11 @@ async def search_users(
 
     return [
         {
-            "id":         str(u.id),
-            "username":   u.username or u.email.split("@")[0],
-            "full_name":  build_full_name(u) or u.display_name,
-            "display":    display(u),
-            "avatar_url": u.avatar_url,
+            "id":           str(u.id),
+            "username":     u.username or u.email.split("@")[0],
+            "display_name": display(u),
+            "avatar_url":   u.avatar_url,
+            "is_verified":  u.is_verified,
         }
         for u in users
     ]
