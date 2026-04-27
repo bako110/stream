@@ -28,6 +28,7 @@ class StoryAuthor(BaseModel):
     username: str
     display_name: Optional[str] = None
     avatar_url: Optional[str] = None
+    is_verified: bool = False
 
     model_config = {"from_attributes": True}
 
