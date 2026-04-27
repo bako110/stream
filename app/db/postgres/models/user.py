@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import datetime, date
-from sqlalchemy import String, Boolean, Enum, DateTime, Date, Index
+from sqlalchemy import String, Boolean, Enum, DateTime, Date, Index, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -24,6 +24,13 @@ class Gender(str, enum.Enum):
 class OAuthProvider(str, enum.Enum):
     google = "google"
     facebook = "facebook"
+
+
+class VerificationStatus(str, enum.Enum):
+    none = "none"
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
 
 
 class User(Base):
@@ -74,6 +81,16 @@ class User(Base):
     reset_token_expires: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # ── Vérification FoliX ────────────────────────────────────────────────────
+    verification_status: Mapped[VerificationStatus] = mapped_column(
+        Enum(VerificationStatus, name="verificationstatus"),
+        default=VerificationStatus.none, nullable=False,
+    )
+    verification_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    verification_requested_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    verification_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

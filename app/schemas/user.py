@@ -3,7 +3,7 @@ from pydantic import BaseModel, EmailStr, UUID4, field_validator, model_validato
 from typing import Optional
 from datetime import datetime, date
 
-from app.db.postgres.models.user import UserRole, Gender
+from app.db.postgres.models.user import UserRole, Gender, VerificationStatus
 
 
 # ─── Inscription ──────────────────────────────────────────────────────────────
@@ -126,6 +126,9 @@ class UserResponse(BaseModel):
     is_active: bool
     oauth_provider: Optional[str] = None
     created_at: Optional[datetime] = None
+    verification_status: Optional[VerificationStatus] = VerificationStatus.none
+    verification_note: Optional[str] = None
+    verification_requested_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
@@ -149,14 +152,15 @@ class UserPublic(BaseModel):
 
 class UserPublicProfile(UserPublic):
     """Profil public enrichi avec compteurs follow."""
-    followers_count:  int = 0
-    following_count:  int = 0
-    is_followed:      bool = False
-    is_verified:      bool = False
-    phone:            Optional[str] = None
-    date_of_birth:    Optional[date] = None
-    gender:           Optional[str] = None
-    created_at:       Optional[datetime] = None
+    followers_count:     int = 0
+    following_count:     int = 0
+    is_followed:         bool = False
+    is_verified:         bool = False
+    verification_status: Optional[VerificationStatus] = VerificationStatus.none
+    phone:               Optional[str] = None
+    date_of_birth:       Optional[date] = None
+    gender:              Optional[str] = None
+    created_at:          Optional[datetime] = None
 
 
 # ─── Confidentialité ──────────────────────────────────────────────────────────
@@ -256,3 +260,26 @@ class QRStatusResponse(BaseModel):
 class QRLoginResponse(Token):
     """Réponse scan QR = tokens + user."""
     user: UserResponse
+
+
+# ─── Vérification FoliX ───────────────────────────────────────────────────────
+
+class VerificationRequest(BaseModel):
+    """Soumission d'une demande de vérification par l'utilisateur."""
+    note: Optional[str] = None  # message optionnel (ex: lien Instagram, raison)
+
+
+class VerificationReview(BaseModel):
+    """Décision admin : approuver ou rejeter."""
+    approved: bool
+    note: Optional[str] = None  # raison du rejet ou message
+
+
+class VerificationStatusResponse(BaseModel):
+    status: VerificationStatus
+    is_verified: bool
+    note: Optional[str] = None
+    requested_at: Optional[datetime] = None
+    reviewed_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}

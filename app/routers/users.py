@@ -12,10 +12,13 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.db.postgres.session import get_db
 from app.db.mongo.session import get_mongo
 from app.deps import get_current_active_user, get_optional_user, require_role
-from app.db.postgres.models.user import User, UserRole
+from app.db.postgres.models.user import User, UserRole, VerificationStatus
 from app.db.postgres.models.follow import Follow
 from app.db.postgres.models.user_block import UserBlock
-from app.schemas.user import UserResponse, UserPublic, UserPublicProfile, UserUpdate, PrivacySettings
+from app.schemas.user import (
+    UserResponse, UserPublic, UserPublicProfile, UserUpdate, PrivacySettings,
+    VerificationRequest, VerificationReview, VerificationStatusResponse,
+)
 from app.services.user_service import UserService
 from app.services.activity_service import ActivityService
 from app.db.postgres.models.activity import ActivityType
@@ -459,3 +462,80 @@ async def delete_user(
 ):
     """[Admin] Supprimer définitivement un compte."""
     await UserService.delete(user_id, db)
+
+
+# ── Vérification FoliX ────────────────────────────────────────────────────────
+
+@router.get("/me/verification", response_model=VerificationStatusResponse)
+async def get_verification_status(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Statut de vérification de l'utilisateur connecté."""
+    return VerificationStatusResponse(
+        status=current_user.verification_status,
+        is_verified=current_user.is_verified,
+        note=current_user.verification_note,
+        requested_at=current_user.verification_requested_at,
+        reviewed_at=current_user.verification_reviewed_at,
+    )
+
+
+@router.post("/me/verify-request", response_model=VerificationStatusResponse)
+async def request_verification(
+    payload: VerificationRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Soumettre une demande de vérification FoliX."""
+    from fastapi import HTTPException
+    from datetime import datetime
+
+    if current_user.is_verified:
+        raise HTTPException(400, "Votre compte est déjà vérifié")
+    if current_user.verification_status == VerificationStatus.pending:
+        raise HTTPException(400, "Une demande est déjà en cours d'examen")
+
+    current_user.verification_status = VerificationStatus.pending
+    current_user.verification_note = payload.note
+    current_user.verification_requested_at = datetime.utcnow()
+    current_user.verification_reviewed_at = None
+    await db.commit()
+    await db.refresh(current_user)
+
+    return VerificationStatusResponse(
+        status=current_user.verification_status,
+        is_verified=current_user.is_verified,
+        note=current_user.verification_note,
+        requested_at=current_user.verification_requested_at,
+        reviewed_at=current_user.verification_reviewed_at,
+    )
+
+
+@router.patch("/{user_id}/verify", response_model=UserResponse)
+async def review_verification(
+    user_id: uuid.UUID,
+    payload: VerificationReview,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role("admin")),
+):
+    """[Admin] Approuver ou rejeter une demande de vérification."""
+    from fastapi import HTTPException
+    from datetime import datetime
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "Utilisateur introuvable")
+
+    if payload.approved:
+        user.is_verified = True
+        user.verification_status = VerificationStatus.approved
+    else:
+        user.is_verified = False
+        user.verification_status = VerificationStatus.rejected
+
+    user.verification_note = payload.note
+    user.verification_reviewed_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(user)
+    return user
