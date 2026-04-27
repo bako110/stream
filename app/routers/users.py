@@ -574,19 +574,16 @@ async def match_contacts(
         return "".join(c for c in p if c.isdigit() or c == "+")
 
     normalized_set = {norm(p) for p in payload.phones if p}
+    if not normalized_set:
+        return ContactMatchResponse(user_ids=[])
 
+    # Matching côté DB — ne charge pas tous les users en mémoire
     result = await db.execute(
-        select(User.id, User.phone).where(
+        select(User.id).where(
             User.phone.isnot(None),
             User.id != current_user.id,
+            User.phone.in_(list(normalized_set)),
         )
     )
-    rows = result.all()
-
-    matched_ids = [
-        str(user_id)
-        for user_id, phone in rows
-        if norm(phone or "") in normalized_set
-    ]
-
+    matched_ids = [str(row[0]) for row in result.all()]
     return ContactMatchResponse(user_ids=matched_ids)

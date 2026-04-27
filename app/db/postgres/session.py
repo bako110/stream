@@ -39,11 +39,11 @@ if _is_local:
 
 engine = create_async_engine(
     _db_url,
-    # 2 instances × (3 + 5) = 16 connexions max → sous la limite Fly Postgres (25)
-    pool_size=3,
-    max_overflow=5,
-    pool_timeout=10,
-    pool_recycle=240,   # Fly coupe les idle après ~5 min, on recycle avant
+    # 2 workers × (10 + 15) = 50 connexions max — augmenté pour haute charge
+    pool_size=10,
+    max_overflow=15,
+    pool_timeout=20,
+    pool_recycle=300,   # recycle avant timeout OS (5 min)
     pool_pre_ping=True,
     echo=False,
     connect_args=_connect_args,

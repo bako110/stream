@@ -2,7 +2,7 @@ import uuid
 from typing import Optional
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case, cast, Float, literal, String
 from sqlalchemy.orm import selectinload
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from fastapi import HTTPException
@@ -31,34 +31,42 @@ class ConcertService:
         user_lat: float | None = None, user_lon: float | None = None,
         following_ids: list | None = None,
     ) -> dict:
-        query = select(Concert).options(selectinload(Concert.artist))
+        now = datetime.utcnow()
+        follow_ids_str = [str(fid) for fid in (following_ids or [])]
+
+        # Filtres WHERE
+        filters = []
         if genre:
-            query = query.where(Concert.genre == genre)
-        total = await db.scalar(select(func.count()).select_from(query.subquery()))
-        result = await db.execute(query.offset((page - 1) * limit * 3).limit(limit * 3))
+            filters.append(Concert.genre == genre)
+
+        # Compter le total avec filtres
+        count_q = select(func.count()).select_from(select(Concert).where(*filters).subquery())
+        total = await db.scalar(count_q)
+
+        # Score SQL : follow boost + featured + live + fraîcheur date
+        follow_boost = (
+            case((Concert.artist_id.cast(String).in_(follow_ids_str), cast(1000.0, Float)), else_=cast(0.0, Float))
+            if follow_ids_str else cast(0.0, Float)
+        )
+        featured_boost = case((Concert.is_featured == True, cast(200.0, Float)), else_=cast(0.0, Float))
+        live_boost = case((Concert.status == ConcertStatus.live, cast(300.0, Float)), else_=cast(0.0, Float))
+        time_penalty = func.abs(
+            func.extract("epoch", Concert.scheduled_at) - func.extract("epoch", literal(now))
+        ) / 86400.0
+        score_col = (follow_boost + featured_boost + live_boost - time_penalty).label("score")
+
+        # Tri entièrement en SQL — page exacte, pas de ×3
+        result = await db.execute(
+            select(Concert)
+            .options(selectinload(Concert.artist))
+            .where(*filters)
+            .order_by(score_col.desc())
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
         items = result.scalars().all()
 
-        follow_set = set(str(fid) for fid in (following_ids or []))
-
-        def score(c: Concert) -> float:
-            s = 0.0
-            if str(c.artist_id) in follow_set:
-                s += 1000.0
-            if user_lat is not None and user_lon is not None and c.latitude and c.longitude:
-                km = ConcertService._haversine_km(user_lat, user_lon, c.latitude, c.longitude)
-                s += max(0.0, 500.0 - km)
-            if c.is_featured:
-                s += 200.0
-            if c.status.value == "live":
-                s += 300.0
-            from datetime import datetime as dt
-            diff = abs((c.scheduled_at - dt.utcnow()).total_seconds())
-            s -= diff / 86400.0
-            return s
-
-        items_sorted = sorted(items, key=score, reverse=True)
-        start = (page - 1) * limit
-        return {"items": items_sorted[start:start + limit], "total": total, "page": page, "limit": limit}
+        return {"items": items, "total": total, "page": page, "limit": limit}
 
     @staticmethod
     async def get_live_concerts(db: AsyncSession) -> list:

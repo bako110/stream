@@ -78,13 +78,17 @@ class Event(Base):
     tickets: Mapped[list] = relationship("EventTicket", back_populates="event", cascade="all, delete-orphan")
 
     __table_args__ = (
-        Index("ix_events_status",           "status"),
-        Index("ix_events_starts_at",        "starts_at"),
-        Index("ix_events_event_type",       "event_type"),
-        Index("ix_events_organizer_id",     "organizer_id"),
-        Index("ix_events_venue_city",       "venue_city"),
-        Index("ix_events_status_starts_at", "status", "starts_at"),
-        Index("ix_events_event_type_city",  "event_type", "venue_city"),
+        Index("ix_events_status",              "status"),
+        Index("ix_events_starts_at",           "starts_at"),
+        Index("ix_events_event_type",          "event_type"),
+        Index("ix_events_organizer_id",        "organizer_id"),
+        Index("ix_events_venue_city",          "venue_city"),
+        Index("ix_events_status_starts_at",    "status", "starts_at"),
+        Index("ix_events_event_type_city",     "event_type", "venue_city"),
+        # Feed : status publié + tri created_at
+        Index("ix_events_status_created_at",   "status", "created_at"),
+        # Feed : organizer_id + status pour filtres contacts
+        Index("ix_events_organizer_status",    "organizer_id", "status"),
     )
 
     def __repr__(self):

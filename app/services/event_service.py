@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case, cast, Float, literal, String
 from sqlalchemy.orm import selectinload
 from fastapi import HTTPException
 
@@ -35,44 +35,44 @@ class EventService:
         following_ids: list | None = None,
         organizer_ids: list | None = None,
     ) -> dict:
-        query = select(Event).options(selectinload(Event.organizer))
-        if event_type:
-            query = query.where(Event.event_type == event_type)
-        if city:
-            query = query.where(Event.venue_city.ilike(f"%{city}%"))
-        if status:
-            query = query.where(Event.status == status)
-        if organizer_ids:
-            query = query.where(Event.organizer_id.in_(organizer_ids))
+        now = datetime.utcnow()
+        follow_ids_str = [str(fid) for fid in (following_ids or [])]
 
-        total = await db.scalar(select(func.count()).select_from(query.subquery()))
-        result = await db.execute(query.offset((page - 1) * limit * 3).limit(limit * 3))
+        # Filtres WHERE
+        filters = [Event.status == (status if status else EventStatus.published)]
+        if event_type:
+            filters.append(Event.event_type == event_type)
+        if city:
+            filters.append(Event.venue_city.ilike(f"%{city}%"))
+        if organizer_ids:
+            filters.append(Event.organizer_id.in_(organizer_ids))
+
+        total = await db.scalar(
+            select(func.count()).select_from(select(Event).where(*filters).subquery())
+        )
+
+        # Score SQL : follow boost + featured + fraîcheur date
+        follow_boost = (
+            case((Event.organizer_id.cast(String).in_(follow_ids_str), cast(1000.0, Float)), else_=cast(0.0, Float))
+            if follow_ids_str else cast(0.0, Float)
+        )
+        featured_boost = case((Event.is_featured == True, cast(200.0, Float)), else_=cast(0.0, Float))
+        time_penalty = func.abs(
+            func.extract("epoch", Event.starts_at) - func.extract("epoch", literal(now))
+        ) / 86400.0
+        score_col = (follow_boost + featured_boost - time_penalty).label("score")
+
+        result = await db.execute(
+            select(Event)
+            .options(selectinload(Event.organizer))
+            .where(*filters)
+            .order_by(score_col.desc())
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
         items = result.scalars().all()
 
-        # Scoring : distance + boost follows
-        follow_set = set(str(fid) for fid in (following_ids or []))
-
-        def score(e: Event) -> float:
-            s = 0.0
-            # Boost si organisateur suivi
-            if str(e.organizer_id) in follow_set:
-                s += 1000.0
-            # Score distance (plus proche = score plus élevé)
-            if user_lat is not None and user_lon is not None and e.latitude and e.longitude:
-                km = EventService._haversine_km(user_lat, user_lon, e.latitude, e.longitude)
-                s += max(0.0, 500.0 - km)
-            # Bonus événement en vedette
-            if e.is_featured:
-                s += 200.0
-            # Tri par date comme fallback (plus proche dans le futur)
-            from datetime import datetime as dt
-            diff = abs((e.starts_at - dt.utcnow()).total_seconds())
-            s -= diff / 86400.0  # pénalité légère par jour d'écart
-            return s
-
-        items_sorted = sorted(items, key=score, reverse=True)
-        start = (page - 1) * limit
-        return {"items": items_sorted[start:start + limit], "total": total, "page": page, "limit": limit}
+        return {"items": items, "total": total, "page": page, "limit": limit}
 
     @staticmethod
     async def get_event(event_id: uuid.UUID, db: AsyncSession) -> Event:

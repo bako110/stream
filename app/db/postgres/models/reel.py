@@ -48,11 +48,15 @@ class Reel(Base):
     reactions: Mapped[list] = relationship("Reaction", foreign_keys="Reaction.reel_id", back_populates="reel", cascade="all, delete-orphan")
 
     __table_args__ = (
-        Index("ix_reels_user_id", "user_id"),
-        Index("ix_reels_status", "status"),
-        Index("ix_reels_created_at", "created_at"),
-        Index("ix_reels_view_count", "view_count"),
-        Index("ix_reels_user_status", "user_id", "status"),
+        Index("ix_reels_user_id",          "user_id"),
+        Index("ix_reels_status",           "status"),
+        Index("ix_reels_created_at",       "created_at"),
+        Index("ix_reels_view_count",       "view_count"),
+        Index("ix_reels_user_status",      "user_id", "status"),
+        # Feed : status publié + tri par date
+        Index("ix_reels_status_created",   "status", "created_at"),
+        # Feed scoring : status + vue + likes
+        Index("ix_reels_status_likes",     "status", "like_count"),
     )
 
     def __repr__(self):

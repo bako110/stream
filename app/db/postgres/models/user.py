@@ -105,6 +105,11 @@ class User(Base):
         Index("ix_users_role", "role"),
         Index("ix_users_is_active", "is_active"),
         Index("ix_users_created_at", "created_at"),
+        # Recherche par téléphone (match-contacts)
+        Index("ix_users_phone", "phone"),
+        # Requêtes combinées fréquentes
+        Index("ix_users_active_created", "is_active", "created_at"),
+        Index("ix_users_role_active", "role", "is_active"),
     )
 
     def __repr__(self):
