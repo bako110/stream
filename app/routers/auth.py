@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.postgres.session import get_db
@@ -6,35 +8,49 @@ from app.deps import get_current_user
 from app.db.postgres.models.user import User
 from app.schemas.user import (
     UserRegister, UserResponse, LoginRequest, Token,
-    TokenRefresh, PasswordChange, OAuthLoginRequest,
+    TokenRefresh, PasswordChange, OAuthLoginRequest, LoginResponse,
 )
 from app.services.auth_service import AuthService
 from app.services.oauth_service import OAuthService
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 
 # ── Inscription ───────────────────────────────────────────────────────────────
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register(payload: UserRegister, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def register(request: Request, payload: UserRegister, db: AsyncSession = Depends(get_db)):
     """
     Inscription classique.
     - Champs obligatoires : first_name, last_name, email, password
     - username optionnel (auto-généré prénom+nom si absent)
+    - Limité à 10 inscriptions/minute par IP
     """
-    return await AuthService.register(payload, db)
+    user = await AuthService.register(payload, db)
+    try:
+        from app.services.activity_service import ActivityService
+        from app.tasks.notification_tasks import send_welcome_email
+        await ActivityService.log_welcome(user.id, db)
+        send_welcome_email.delay(user.email, user.display_name or user.username)
+    except Exception:
+        pass
+    return user
 
 
 # ── Connexion ─────────────────────────────────────────────────────────────────
 
-@router.post("/login", response_model=Token)
-async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
+@router.post("/login", response_model=LoginResponse)
+@limiter.limit("5/minute")
+async def login(request: Request, payload: LoginRequest, db: AsyncSession = Depends(get_db)):
     """
     Connexion avec email OU username + mot de passe.
     - identifier : adresse email ou username
+    - Retourne tokens + user (évite un appel /me supplémentaire)
+    - Limité à 5 tentatives/minute par IP (anti brute-force)
     """
-    return Token(**await AuthService.login(payload, db))
+    return LoginResponse(**await AuthService.login(payload, db))
 
 
 @router.post("/refresh", response_model=Token)

@@ -13,6 +13,7 @@ from app.services.subscription_service import SubscriptionService
 from app.services.payment_service import PaymentService
 from app.services.ticket_service import TicketService
 from app.services.search_service import SearchService
+from app.services.feed_service import FeedService
 
 __all__ = [
     "AuthService", "OAuthService", "UserService",
@@ -21,5 +22,5 @@ __all__ = [
     "ReelService", "CommentService", "ReactionService", "ShareService",
     "StreamingService",
     "SubscriptionService", "PaymentService", "TicketService",
-    "SearchService",
+    "SearchService", "FeedService",
 ]

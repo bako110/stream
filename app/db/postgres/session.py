@@ -1,39 +1,66 @@
 """
-Connexion PostgreSQL — compatible Supabase / PgBouncer Transaction pooler.
+Connexion PostgreSQL — compatible Fly Postgres / PgBouncer.
 
-prepared_statement_cache_size=0 dans l'URL désactive le cache de prepared
-statements au niveau du wrapper SQLAlchemy asyncpg — seule façon fiable
-d'éviter DuplicatePreparedStatementError avec PgBouncer Transaction mode.
+PgBouncer en mode Transaction ne supporte pas les prepared statements.
+La solution : contourner le pooler (port 6543) et se connecter directement
+à la base (port 5432). Le backend est un serveur long-running, il gère
+son propre pool de connexions via SQLAlchemy — pas besoin du pooler.
 """
-import ssl as _ssl_module
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
     AsyncSession,
     async_sessionmaker,
 )
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy.pool import NullPool
+from sqlalchemy import event, text
 from typing import AsyncGenerator
+import asyncpg
+import logging
 
 from app.config import settings
 
-_is_supabase = "supabase.co" in settings.DATABASE_URL
+logger = logging.getLogger(__name__)
 
-_ssl_ctx = None
-_connect_args: dict = {}
+# Supabase PgBouncer (port 6543) ne supporte pas les prepared statements.
+# On bascule vers la connexion directe (port 5432) si on détecte le pooler.
+_db_url = settings.DATABASE_URL
+if ":6543" in _db_url:
+    _db_url = _db_url.replace(":6543", ":5432")
 
-if _is_supabase:
-    _ssl_ctx = _ssl_module.create_default_context()
-    _ssl_ctx.check_hostname = False
-    _ssl_ctx.verify_mode = _ssl_module.CERT_NONE
-    _connect_args = {"ssl": _ssl_ctx}
+_raw_url = _db_url.replace("postgresql+asyncpg://", "postgresql://")
+
+# Désactiver SSL pour les connexions locales (Docker) et Fly internes
+_is_local = any(h in _db_url for h in ("localhost", "127.0.0.1", "@postgres:", "@stream_postgres:", ".internal", ".flycast"))
+_connect_args: dict = {
+    "prepared_statement_cache_size": 0,   # requis si PgBouncer (mode transaction)
+}
+if _is_local:
+    _connect_args["ssl"] = False
 
 engine = create_async_engine(
-    settings.DATABASE_URL,
-    poolclass=NullPool,
-    echo=(settings.ENVIRONMENT == "development"),
+    _db_url,
+    # 2 instances × (3 + 5) = 16 connexions max → sous la limite Fly Postgres (25)
+    pool_size=3,
+    max_overflow=5,
+    pool_timeout=10,
+    pool_recycle=240,   # Fly coupe les idle après ~5 min, on recycle avant
+    pool_pre_ping=True,
+    echo=False,
     connect_args=_connect_args,
 )
+
+
+@event.listens_for(engine.sync_engine, "checkout")
+def _invalidate_closed_connection(dbapi_conn, conn_record, conn_proxy):
+    """
+    asyncpg wraps the raw connection in a proxy; pool_pre_ping alone sometimes
+    misses connections closed server-side.  This listener checks the raw
+    asyncpg connection and invalidates it so SQLAlchemy creates a fresh one.
+    """
+    raw = getattr(dbapi_conn, "_connection", None)
+    if raw is not None and raw.is_closed():
+        conn_record.invalidate()
+
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,
@@ -61,24 +88,26 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db() -> None:
+    """Initialize database tables (safe to call even if tables exist)"""
     import app.db.postgres.models  # noqa: F401
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception as e:
+        print(f"   init_db warning: {type(e).__name__}: {e!r}")
 
 
 async def check_connection() -> bool:
+    """Check PostgreSQL connection via le pool (pas de connexion hors-pool)."""
     try:
-        import asyncpg
-        url = settings.DATABASE_URL.split("?")[0].replace(
-            "postgresql+asyncpg://", "postgresql://"
-        )
-        conn = await asyncpg.connect(
-            url, ssl=_ssl_ctx, statement_cache_size=0, timeout=5
-        )
-        await conn.execute("SELECT 1")
-        await conn.close()
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
         return True
     except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning("PostgreSQL check failed: %s", e)
+        print(f"   PostgreSQL check failed: {type(e).__name__}: {e!r}")
         return False
+
+
+async def dispose_engine() -> None:
+    """Nettoyage propre de l'engine"""
+    await engine.dispose()

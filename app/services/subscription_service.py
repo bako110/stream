@@ -1,6 +1,7 @@
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from fastapi import HTTPException
 
 from app.db.postgres.models.subscription import Subscription, PlanType, SubscriptionStatus, PLAN_CONFIG
@@ -23,7 +24,9 @@ class SubscriptionService:
     @staticmethod
     async def get_active_subscription(user: User, db: AsyncSession) -> Subscription | None:
         result = await db.execute(
-            select(Subscription).where(
+            select(Subscription)
+            .options(selectinload(Subscription.user))
+            .where(
                 Subscription.user_id == user.id,
                 Subscription.status.in_([SubscriptionStatus.active, SubscriptionStatus.trialing]),
             )

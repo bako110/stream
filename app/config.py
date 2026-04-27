@@ -18,7 +18,20 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # ─── PostgreSQL ───────────────────────────────────────────────────────────────────────
-    DATABASE_URL: str = "postgresql+asyncpg://user:password@localhost:5432/streaming"
+    DATABASE_URL: str = "postgresql+asyncpg://user:password@localhost:5432/streaming?prepared_statement_cache_size=0"
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def fix_pg_url(cls, v: str) -> str:
+        # Fly.io sets postgres:// but asyncpg needs postgresql+asyncpg://
+        if v.startswith("postgres://"):
+            v = v.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif v.startswith("postgresql://"):
+            v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        # asyncpg ne comprend pas sslmode (param libpq), on le retire
+        import re
+        v = re.sub(r"[?&]sslmode=[^&]*", "", v)
+        return v
 
     # ─── MongoDB (données lourdes : vidéos, watch history, catalogue enrichi) ─────────
     MONGODB_URL: str = "mongodb://localhost:27017"
@@ -26,6 +39,15 @@ class Settings(BaseSettings):
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
+
+    # Stockage local des médias
+    UPLOAD_DIR: str = "/var/www/uploads"
+    MEDIA_BASE_URL: str = "http://178.104.248.78"
+
+    # Cloudinary (désactivé — conservé pour compatibilité)
+    CLOUDINARY_CLOUD_NAME: str = ""
+    CLOUDINARY_API_KEY: str = ""
+    CLOUDINARY_API_SECRET: str = ""
 
     # JWT
     JWT_SECRET_KEY: str = "change-this-secret-key"
@@ -57,6 +79,11 @@ class Settings(BaseSettings):
 
     # CORS
     CORS_ORIGINS: List[str] = ["*"]
+
+    # LiveKit
+    LIVEKIT_URL: str = ""
+    LIVEKIT_API_KEY: str = ""
+    LIVEKIT_API_SECRET: str = ""
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

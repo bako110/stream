@@ -9,6 +9,9 @@ class EpisodeCreate(BaseModel):
     number: int
     title: str
     synopsis: Optional[str] = None
+    thumbnail_url: Optional[str] = None
+    video_url: Optional[str] = None
+    duration_sec: Optional[int] = None
     is_free: bool = False
 
 
@@ -16,6 +19,7 @@ class EpisodeUpdate(BaseModel):
     title: Optional[str] = None
     synopsis: Optional[str] = None
     thumbnail_url: Optional[str] = None
+    video_url: Optional[str] = None
     duration_sec: Optional[int] = None
     is_free: Optional[bool] = None
     is_published: Optional[bool] = None
@@ -30,6 +34,7 @@ class EpisodeResponse(BaseModel):
     title: str
     synopsis: Optional[str] = None
     thumbnail_url: Optional[str] = None
+    video_url: Optional[str] = None
     duration_sec: Optional[int] = None
     is_free: bool
     is_published: bool

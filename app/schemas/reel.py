@@ -1,13 +1,14 @@
-from pydantic import BaseModel, UUID4
+from pydantic import BaseModel, UUID4, field_validator
 from typing import Optional
 from datetime import datetime
 
 from app.db.postgres.models.reel import ReelStatus
+from app.schemas.user import UserPublic
 
 
 class ReelCreate(BaseModel):
     caption: Optional[str] = None
-    video_url: Optional[str] = None
+    video_url: str
     thumbnail_url: Optional[str] = None
     duration_sec: Optional[int] = None
     ref_content_id: Optional[UUID4] = None
@@ -20,6 +21,10 @@ class ReelUpdate(BaseModel):
     thumbnail_url: Optional[str] = None
     video_url: Optional[str] = None
     status: Optional[ReelStatus] = None
+
+
+class ReelViewInput(BaseModel):
+    watch_ratio: float = 1.0  # 0.0→1.0 (% de la vidéo regardée)
 
 
 class ReelResponse(BaseModel):
@@ -39,6 +44,7 @@ class ReelResponse(BaseModel):
     ref_content_id: Optional[UUID4] = None
     ref_concert_id: Optional[UUID4] = None
     ref_event_id: Optional[UUID4] = None
-    created_at: datetime
+    created_at: Optional[datetime] = None
+    author: Optional[UserPublic] = None
 
     model_config = {"from_attributes": True}

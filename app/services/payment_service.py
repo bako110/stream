@@ -1,6 +1,7 @@
 import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from fastapi import HTTPException
 
 from app.db.postgres.models.payment import Payment, PaymentType, PaymentStatus
@@ -12,17 +13,26 @@ class PaymentService:
     @staticmethod
     async def get_user_payments(user: User, db: AsyncSession) -> list:
         result = await db.execute(
-            select(Payment).where(Payment.user_id == user.id).order_by(Payment.created_at.desc()).limit(50)
+            select(Payment)
+            .options(selectinload(Payment.user))
+            .where(Payment.user_id == user.id)
+            .order_by(Payment.created_at.desc())
+            .limit(50)
         )
         return result.scalars().all()
 
     @staticmethod
     async def get_payment(payment_id: uuid.UUID, user: User, db: AsyncSession) -> Payment:
-        result = await db.execute(select(Payment).where(Payment.id == payment_id))
+        result = await db.execute(
+            select(Payment)
+            .options(selectinload(Payment.user))
+            .where(Payment.id == payment_id)
+        )
         payment = result.scalar_one_or_none()
         if not payment:
             raise HTTPException(status_code=404, detail="Paiement non trouvé")
-        if payment.user_id != user.id and user.role.value != "admin":
+        role = user.role.value if hasattr(user.role, 'value') else user.role
+        if payment.user_id != user.id and role != "admin":
             raise HTTPException(status_code=403, detail="Accès refusé")
         return payment
 

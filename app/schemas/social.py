@@ -23,12 +23,22 @@ class CommentUpdate(BaseModel):
     body: str
 
 
+class AuthorInfo(BaseModel):
+    id: UUID4
+    username: Optional[str] = None
+    display_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
 class CommentResponse(BaseModel):
     id: UUID4
     user_id: UUID4
     body: str
     is_edited: bool
     like_count: int
+    dislike_count: int = 0
     reel_id: Optional[UUID4] = None
     content_id: Optional[UUID4] = None
     concert_id: Optional[UUID4] = None
@@ -36,6 +46,7 @@ class CommentResponse(BaseModel):
     parent_id: Optional[UUID4] = None
     created_at: datetime
     updated_at: datetime
+    author: Optional[AuthorInfo] = None
 
     model_config = {"from_attributes": True}
 

@@ -3,27 +3,40 @@ Tâches de transcodage vidéo.
 Déclenchées après l'upload d'un fichier brut sur S3/MinIO.
 """
 import asyncio
+import uuid
 from datetime import datetime
 from bson import ObjectId
 
 from app.tasks.celery_app import celery_app
 
+# Client Mongo partagé entre toutes les tâches du worker (singleton)
+_mongo_db = None
+
 
 def _get_mongo_db():
-    """Connexion Motor synchrone pour les tâches Celery (contexte sync)."""
-    from motor.motor_asyncio import AsyncIOMotorClient
-    from app.config import settings
-    client = AsyncIOMotorClient(settings.MONGODB_URL)
-    return client[settings.MONGODB_DB_NAME]
+    """Retourne la connexion Mongo partagée du worker (créée une seule fois)."""
+    global _mongo_db
+    if _mongo_db is None:
+        from motor.motor_asyncio import AsyncIOMotorClient
+        from app.config import settings
+        client = AsyncIOMotorClient(
+            settings.MONGODB_URL,
+            maxPoolSize=5,   # petit pool pour les workers Celery
+        )
+        _mongo_db = client[settings.MONGODB_DB_NAME]
+    return _mongo_db
 
 
 def _run(coro):
-    """Exécute une coroutine dans un event loop Celery."""
-    loop = asyncio.new_event_loop()
+    """Exécute une coroutine dans l'event loop courant ou en crée un."""
     try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            raise RuntimeError("loop closed")
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(coro)
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
@@ -98,19 +111,13 @@ def process_reel_video(reel_id: str, raw_video_url: str):
     - Compression/optimisation
     - Mise à jour du statut vers 'published'
     """
-    from sqlalchemy import create_engine
-    from app.config import settings
-
     async def _run_task():
-        from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-        from sqlalchemy import select, update
-        import uuid
+        # Réutilise le pool SQLAlchemy de l'application (pas de nouvel engine)
+        from app.db.postgres.session import AsyncSessionLocal
+        from sqlalchemy import select
         from app.db.postgres.models.reel import Reel, ReelStatus
 
-        engine = create_async_engine(settings.DATABASE_URL)
-        Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-        async with Session() as session:
+        async with AsyncSessionLocal() as session:
             result = await session.execute(
                 select(Reel).where(Reel.id == uuid.UUID(reel_id))
             )
@@ -119,7 +126,5 @@ def process_reel_video(reel_id: str, raw_video_url: str):
                 reel.video_url = raw_video_url  # En prod : URL compressée
                 reel.status = ReelStatus.published
                 await session.commit()
-
-        await engine.dispose()
 
     _run(_run_task())

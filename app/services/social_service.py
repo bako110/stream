@@ -4,6 +4,7 @@ Service social : commentaires, réactions (like/dislike), partages.
 import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_
+from sqlalchemy.orm import selectinload
 from fastapi import HTTPException
 
 from app.db.postgres.models.comment import Comment
@@ -15,6 +16,7 @@ from app.db.postgres.models.concert import Concert
 from app.db.postgres.models.event import Event
 from app.db.postgres.models.user import User
 from app.schemas.social import CommentCreate, CommentUpdate, ReactionCreate, ShareCreate
+from app.services.feed_service import FeedService
 
 
 # ── Clés cibles valides ───────────────────────────────────────────────────────
@@ -58,6 +60,26 @@ async def _adjust_counter(target_key: str, target_id: uuid.UUID, delta: int, fie
         setattr(obj, field, max(0, getattr(obj, field) + delta))
 
 
+async def _get_target_category(target_key: str, target_id: uuid.UUID, db: AsyncSession) -> str | None:
+    """Retourne la catégorie d'un contenu (event_type, genre, etc.) pour MAJ intérêts."""
+    Model = _MODEL_MAP.get(target_key)
+    if not Model:
+        return None
+    result = await db.execute(select(Model).where(Model.id == target_id))
+    obj = result.scalar_one_or_none()
+    if not obj:
+        return None
+    if target_key == "event_id":
+        return obj.event_type.value if hasattr(obj, "event_type") and obj.event_type else "other"
+    elif target_key == "concert_id":
+        return obj.genre or "music"
+    elif target_key == "reel_id":
+        return "reel"
+    elif target_key == "content_id":
+        return getattr(obj, "content_type", None) or "content"
+    return None
+
+
 # ── Commentaires ─────────────────────────────────────────────────────────────
 
 class CommentService:
@@ -73,7 +95,7 @@ class CommentService:
         db: AsyncSession,
     ) -> list:
         """Commentaires racine (sans parent) d'une cible, paginés."""
-        query = select(Comment).where(Comment.parent_id.is_(None))
+        query = select(Comment).where(Comment.parent_id.is_(None)).options(selectinload(Comment.author))
 
         if reel_id:
             query = query.where(Comment.reel_id == reel_id)
@@ -91,12 +113,21 @@ class CommentService:
         return result.scalars().all()
 
     @staticmethod
-    async def get_replies(comment_id: uuid.UUID, db: AsyncSession) -> list:
-        """Réponses directes à un commentaire."""
+    async def get_replies(
+        comment_id: uuid.UUID,
+        db: AsyncSession,
+        page: int = 1,
+        limit: int = 20,
+    ) -> list:
+        """Réponses directes à un commentaire, paginées (max 100)."""
+        limit = min(limit, 100)
         result = await db.execute(
             select(Comment)
+            .options(selectinload(Comment.author))
             .where(Comment.parent_id == comment_id)
             .order_by(Comment.created_at)
+            .offset((page - 1) * limit)
+            .limit(limit)
         )
         return result.scalars().all()
 
@@ -131,6 +162,15 @@ class CommentService:
         db.add(comment)
         await db.commit()
         await db.refresh(comment)
+
+        # MAJ intérêts utilisateur
+        try:
+            category = await _get_target_category(target_key, target_id, db)
+            if category:
+                await FeedService.update_user_interest(user.id, category, "comment", db)
+        except Exception:
+            pass  # ne pas bloquer si l'intérêt échoue
+
         return comment
 
     @staticmethod
@@ -153,7 +193,8 @@ class CommentService:
         comment = result.scalar_one_or_none()
         if not comment:
             raise HTTPException(status_code=404, detail="Commentaire non trouvé")
-        if comment.user_id != user.id and user.role.value != "admin":
+        role = user.role.value if hasattr(user.role, 'value') else user.role
+        if comment.user_id != user.id and role != "admin":
             raise HTTPException(status_code=403, detail="Accès refusé")
 
         # Décrémenter le compteur si commentaire racine
@@ -185,9 +226,10 @@ class ReactionService:
         if not all_targets:
             raise HTTPException(status_code=400, detail="Précisez une cible")
 
-        # Trouver la cible principale (hors comment_id pour les compteurs)
+        # Cible principale : commentaire OU contenu/reel/concert/event
         main_key = next((k for k in _TARGET_KEYS if d.get(k) is not None), None)
         main_id = d.get(main_key) if main_key else None
+        comment_id = d.get("comment_id")
 
         # Chercher une réaction existante sur cette cible précise
         target_key, target_id = list(all_targets.items())[0]
@@ -199,11 +241,19 @@ class ReactionService:
         )
         existing = existing_result.scalar_one_or_none()
 
+        async def _adjust_comment(delta: int, field: str) -> None:
+            if comment_id:
+                res = await db.execute(select(Comment).where(Comment.id == comment_id))
+                c = res.scalar_one_or_none()
+                if c and hasattr(c, field):
+                    setattr(c, field, max(0, getattr(c, field) + delta))
+
         if existing:
             if existing.reaction_type == data.reaction_type:
                 # Annuler
                 if main_key:
                     await _adjust_counter(main_key, main_id, -1, f"{data.reaction_type.value}_count", db)
+                await _adjust_comment(-1, f"{data.reaction_type.value}_count")
                 await db.delete(existing)
                 await db.commit()
                 return {"action": "removed", "reaction_type": data.reaction_type}
@@ -213,6 +263,8 @@ class ReactionService:
                 if main_key:
                     await _adjust_counter(main_key, main_id, -1, f"{old_type.value}_count", db)
                     await _adjust_counter(main_key, main_id, +1, f"{data.reaction_type.value}_count", db)
+                await _adjust_comment(-1, f"{old_type.value}_count")
+                await _adjust_comment(+1, f"{data.reaction_type.value}_count")
                 existing.reaction_type = data.reaction_type
                 await db.commit()
                 return {"action": "changed", "reaction_type": data.reaction_type}
@@ -222,7 +274,18 @@ class ReactionService:
         db.add(reaction)
         if main_key:
             await _adjust_counter(main_key, main_id, +1, f"{data.reaction_type.value}_count", db)
+        await _adjust_comment(+1, f"{data.reaction_type.value}_count")
         await db.commit()
+
+        # MAJ intérêts utilisateur si like
+        if data.reaction_type == ReactionType.like and main_key:
+            try:
+                category = await _get_target_category(main_key, main_id, db)
+                if category:
+                    await FeedService.update_user_interest(user.id, category, "like", db)
+            except Exception:
+                pass
+
         return {"action": "added", "reaction_type": data.reaction_type}
 
     @staticmethod
@@ -298,6 +361,15 @@ class ShareService:
         await _adjust_counter(target_key, target_id, +1, "share_count", db)
         await db.commit()
         await db.refresh(share)
+
+        # MAJ intérêts utilisateur
+        try:
+            category = await _get_target_category(target_key, target_id, db)
+            if category:
+                await FeedService.update_user_interest(user.id, category, "share", db)
+        except Exception:
+            pass
+
         return share
 
     @staticmethod

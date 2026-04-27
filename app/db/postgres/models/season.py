@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Integer, Text, ForeignKey, DateTime
+from sqlalchemy import String, Integer, Text, ForeignKey, DateTime, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -23,6 +23,13 @@ class Season(Base):
 
     content: Mapped["Content"] = relationship("Content", back_populates="seasons")
     episodes: Mapped[list] = relationship("Episode", back_populates="season", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("ix_seasons_content_id", "content_id"),
+        Index("ix_seasons_number", "number"),
+        Index("ix_seasons_created_at", "created_at"),
+        Index("ix_seasons_content_number", "content_id", "number"),
+    )
 
     def __repr__(self):
         return f"<Season S{self.number} content={self.content_id}>"

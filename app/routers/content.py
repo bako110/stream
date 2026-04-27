@@ -17,6 +17,7 @@ from app.db.postgres.models.payment import Payment
 from app.db.postgres.models.reel import Reel
 from app.schemas.content import ContentCreate, ContentUpdate, ContentResponse, ContentListResponse
 from app.services.content_service import ContentService
+from app.utils.cache import cache_get, cache_set, cache_invalidate_prefix
 
 router = APIRouter()
 
@@ -64,7 +65,18 @@ async def list_films(
     language: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
 ):
-    return await ContentService.list_films(page, limit, year, language, db)
+    ck = f"films:list:p{page}:l{limit}:y{year or 'all'}:l{language or 'all'}"
+    if (cached := await cache_get(ck)) is not None:
+        return cached
+    result = await ContentService.list_films(page, limit, year, language, db)
+    serialized = {
+        "items": [ContentResponse.model_validate(i).model_dump(mode="json") for i in result["items"]],
+        "total": result["total"],
+        "page": result["page"],
+        "limit": result["limit"],
+    }
+    await cache_set(ck, serialized, ttl=120)
+    return result
 
 
 @router.get("/films/{content_id}", response_model=ContentResponse)
@@ -80,7 +92,10 @@ async def create_film(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("admin")),
 ):
-    return await ContentService.create_film(data, current_user.id, db)
+    result = await ContentService.create_film(data, current_user.id, db)
+    await cache_invalidate_prefix("films:")
+    await cache_invalidate_prefix("series:")
+    return result
 
 
 @router.put("/films/{content_id}", response_model=ContentResponse)
@@ -90,7 +105,10 @@ async def update_film(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_role("admin")),
 ):
-    return await ContentService.update_content(content_id, data, db)
+    result = await ContentService.update_content(content_id, data, db)
+    await cache_invalidate_prefix("films:")
+    await cache_invalidate_prefix("series:")
+    return result
 
 
 @router.patch("/films/{content_id}/publish", response_model=ContentResponse)
@@ -99,7 +117,10 @@ async def publish_film(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_role("admin")),
 ):
-    return await ContentService.toggle_publish(content_id, db)
+    result = await ContentService.toggle_publish(content_id, db)
+    await cache_invalidate_prefix("films:")
+    await cache_invalidate_prefix("series:")
+    return result
 
 
 @router.delete("/films/{content_id}", status_code=204)
@@ -109,6 +130,8 @@ async def delete_film(
     _: User = Depends(require_role("admin")),
 ):
     await ContentService.delete_content(content_id, db)
+    await cache_invalidate_prefix("films:")
+    await cache_invalidate_prefix("series:")
 
 
 # ── Séries — public ───────────────────────────────────────────────────────────
@@ -119,7 +142,18 @@ async def list_series(
     limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    return await ContentService.list_series(page, limit, db)
+    ck = f"series:list:p{page}:l{limit}"
+    if (cached := await cache_get(ck)) is not None:
+        return cached
+    result = await ContentService.list_series(page, limit, db)
+    serialized = {
+        "items": [ContentResponse.model_validate(i).model_dump(mode="json") for i in result["items"]],
+        "total": result["total"],
+        "page": result["page"],
+        "limit": result["limit"],
+    }
+    await cache_set(ck, serialized, ttl=120)
+    return result
 
 
 @router.get("/series/{content_id}", response_model=ContentResponse)
@@ -135,7 +169,10 @@ async def create_serie(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("admin")),
 ):
-    return await ContentService.create_serie(data, current_user.id, db)
+    result = await ContentService.create_serie(data, current_user.id, db)
+    await cache_invalidate_prefix("series:")
+    await cache_invalidate_prefix("films:")
+    return result
 
 
 @router.put("/series/{content_id}", response_model=ContentResponse)
@@ -145,7 +182,10 @@ async def update_serie(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_role("admin")),
 ):
-    return await ContentService.update_content(content_id, data, db)
+    result = await ContentService.update_content(content_id, data, db)
+    await cache_invalidate_prefix("series:")
+    await cache_invalidate_prefix("films:")
+    return result
 
 
 @router.patch("/series/{content_id}/publish", response_model=ContentResponse)
@@ -154,7 +194,10 @@ async def publish_serie(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_role("admin")),
 ):
-    return await ContentService.toggle_publish(content_id, db)
+    result = await ContentService.toggle_publish(content_id, db)
+    await cache_invalidate_prefix("series:")
+    await cache_invalidate_prefix("films:")
+    return result
 
 
 @router.delete("/series/{content_id}", status_code=204)
@@ -164,6 +207,8 @@ async def delete_serie(
     _: User = Depends(require_role("admin")),
 ):
     await ContentService.delete_content(content_id, db)
+    await cache_invalidate_prefix("series:")
+    await cache_invalidate_prefix("films:")
 
 
 # ── Admin — liste complète tous contenus ──────────────────────────────────────

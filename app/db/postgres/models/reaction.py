@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import datetime
-from sqlalchemy import Enum as SAEnum, ForeignKey, DateTime, UniqueConstraint
+from sqlalchemy import Enum as SAEnum, ForeignKey, DateTime, UniqueConstraint, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -23,6 +23,13 @@ class Reaction(Base):
         UniqueConstraint("user_id", "concert_id", name="uq_reaction_user_concert"),
         UniqueConstraint("user_id", "event_id",   name="uq_reaction_user_event"),
         UniqueConstraint("user_id", "comment_id", name="uq_reaction_user_comment"),
+        # Indexes pour les performances
+        Index("ix_reactions_reel_id",     "reel_id"),
+        Index("ix_reactions_content_id",  "content_id"),
+        Index("ix_reactions_event_id",    "event_id"),
+        Index("ix_reactions_concert_id",  "concert_id"),
+        Index("ix_reactions_user_id",     "user_id"),
+        Index("ix_reactions_created_at",  "created_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import datetime
-from sqlalchemy import String, Enum as SAEnum, ForeignKey, DateTime
+from sqlalchemy import String, Enum as SAEnum, ForeignKey, DateTime, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -34,6 +34,16 @@ class Share(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     user: Mapped["User"] = relationship("User")
+
+    __table_args__ = (
+        Index("ix_shares_user_id", "user_id"),
+        Index("ix_shares_platform", "platform"),
+        Index("ix_shares_reel_id", "reel_id"),
+        Index("ix_shares_content_id", "content_id"),
+        Index("ix_shares_concert_id", "concert_id"),
+        Index("ix_shares_event_id", "event_id"),
+        Index("ix_shares_created_at", "created_at"),
+    )
 
     def __repr__(self):
         return f"<Share {self.platform} user={self.user_id}>"

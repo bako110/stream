@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Integer, Text, Boolean, ForeignKey, DateTime
+from sqlalchemy import String, Integer, Text, Boolean, ForeignKey, DateTime, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -16,6 +16,7 @@ class Episode(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     synopsis: Mapped[str | None] = mapped_column(Text, nullable=True)
     thumbnail_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    video_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     duration_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_free: Mapped[bool] = mapped_column(Boolean, default=False)
     is_published: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -26,6 +27,14 @@ class Episode(Base):
 
     season: Mapped["Season"] = relationship("Season", back_populates="episodes")
     # Vidéos → MongoDB collection 'videos' (référence via episode_id string)
+
+    __table_args__ = (
+        Index("ix_episodes_season_id", "season_id"),
+        Index("ix_episodes_number", "number"),
+        Index("ix_episodes_is_published", "is_published"),
+        Index("ix_episodes_created_at", "created_at"),
+        Index("ix_episodes_season_number", "season_id", "number"),
+    )
 
     def __repr__(self):
         return f"<Episode E{self.number} - {self.title}>"

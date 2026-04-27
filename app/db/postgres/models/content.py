@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import datetime
-from sqlalchemy import String, Boolean, Integer, Numeric, Text, Enum, ForeignKey, DateTime
+from sqlalchemy import String, Boolean, Integer, Numeric, Text, Enum, ForeignKey, DateTime, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 
@@ -51,6 +51,16 @@ class Content(Base):
     # Relations PostgreSQL
     seasons: Mapped[list] = relationship("Season", back_populates="content", cascade="all, delete-orphan")
     # Vidéos → MongoDB collection 'videos' (référence via content_id string)
+
+    __table_args__ = (
+        Index("ix_contents_type", "type"),
+        Index("ix_contents_status", "status"),
+        Index("ix_contents_year", "year"),
+        Index("ix_contents_language", "language"),
+        Index("ix_contents_is_premium", "is_premium"),
+        Index("ix_contents_created_at", "created_at"),
+        Index("ix_contents_type_status", "type", "status"),
+    )
 
     def __repr__(self):
         return f"<Content {self.title} ({self.type})>"

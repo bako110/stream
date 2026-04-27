@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Boolean, Enum, ForeignKey, DateTime, Numeric
+from sqlalchemy import String, Boolean, Enum, ForeignKey, DateTime, Numeric, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -26,6 +26,14 @@ class EventTicket(Base):
     user: Mapped["User"] = relationship("User")
     event: Mapped["Event"] = relationship("Event", back_populates="tickets")
     payment: Mapped["Payment"] = relationship("Payment")
+
+    __table_args__ = (
+        Index("ix_event_tickets_user_id", "user_id"),
+        Index("ix_event_tickets_event_id", "event_id"),
+        Index("ix_event_tickets_status", "status"),
+        Index("ix_event_tickets_access_code", "access_code"),
+        Index("ix_event_tickets_created_at", "created_at"),
+    )
 
     def __repr__(self):
         return f"<EventTicket event={self.event_id} user={self.user_id} [{self.status}]>"

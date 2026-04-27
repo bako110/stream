@@ -1,6 +1,7 @@
 import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from fastapi import HTTPException
 
 from app.db.postgres.models.content import Content, ContentType
@@ -14,12 +15,21 @@ class SeasonService:
 
     @staticmethod
     async def list_seasons(content_id: uuid.UUID, db: AsyncSession) -> list:
-        result = await db.execute(select(Season).where(Season.content_id == content_id).order_by(Season.number))
+        result = await db.execute(
+            select(Season)
+            .options(selectinload(Season.episodes))
+            .where(Season.content_id == content_id)
+            .order_by(Season.number)
+        )
         return result.scalars().all()
 
     @staticmethod
     async def get_season(content_id: uuid.UUID, number: int, db: AsyncSession) -> Season:
-        result = await db.execute(select(Season).where(Season.content_id == content_id, Season.number == number))
+        result = await db.execute(
+            select(Season)
+            .options(selectinload(Season.episodes))
+            .where(Season.content_id == content_id, Season.number == number)
+        )
         season = result.scalar_one_or_none()
         if not season:
             raise HTTPException(status_code=404, detail="Saison non trouvée")
@@ -71,7 +81,11 @@ class EpisodeService:
 
     @staticmethod
     async def get_episode(episode_id: uuid.UUID, db: AsyncSession) -> Episode:
-        result = await db.execute(select(Episode).where(Episode.id == episode_id))
+        result = await db.execute(
+            select(Episode)
+            .options(selectinload(Episode.season))
+            .where(Episode.id == episode_id)
+        )
         episode = result.scalar_one_or_none()
         if not episode:
             raise HTTPException(status_code=404, detail="Épisode non trouvé")

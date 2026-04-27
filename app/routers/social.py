@@ -10,10 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.postgres.session import get_db
 from app.deps import get_current_active_user
 from app.db.postgres.models.user import User
+from app.db.postgres.models.user_block import UserBlock
+from app.deps import get_optional_user
+from sqlalchemy import select, or_
 from app.schemas.social import (
     CommentCreate, CommentUpdate, CommentResponse,
     ReactionCreate, ReactionResponse,
-    ShareCreate, ShareResponse,
+    ShareCreate, ShareResponse, AuthorInfo,
 )
 from app.services.social_service import CommentService, ReactionService, ShareService
 
@@ -31,13 +34,29 @@ async def list_comments(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
 ):
-    return await CommentService.list_comments(reel_id, content_id, concert_id, event_id, page, limit, db)
+    comments = await CommentService.list_comments(reel_id, content_id, concert_id, event_id, page, limit, db)
+    # Filtrer les commentaires des utilisateurs bloqués
+    if current_user and comments:
+        blocked_res = await db.execute(
+            select(UserBlock.blocked_id).where(UserBlock.blocker_id == current_user.id)
+        )
+        blocked_ids = {str(r[0]) for r in blocked_res.all()}
+        if blocked_ids:
+            comments = [c for c in comments if str(getattr(c, 'user_id', '') or '') not in blocked_ids]
+    return [CommentResponse.model_validate(c) for c in comments]
 
 
 @router.get("/comments/{comment_id}/replies", response_model=list[CommentResponse])
-async def get_replies(comment_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    return await CommentService.get_replies(comment_id, db)
+async def get_replies(
+    comment_id: uuid.UUID,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    replies = await CommentService.get_replies(comment_id, db, page=page, limit=limit)
+    return [CommentResponse.model_validate(c) for c in replies]
 
 
 @router.post("/comments", response_model=CommentResponse, status_code=201)
@@ -46,7 +65,16 @@ async def create_comment(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    return await CommentService.create_comment(data, current_user, db)
+    from sqlalchemy.orm import selectinload
+    from sqlalchemy import select as sa_select
+    from app.db.postgres.models.comment import Comment as CommentModel
+    comment = await CommentService.create_comment(data, current_user, db)
+    # Recharger avec author
+    result = await db.execute(
+        sa_select(CommentModel).options(selectinload(CommentModel.author)).where(CommentModel.id == comment.id)
+    )
+    comment = result.scalar_one()
+    return CommentResponse.model_validate(comment)
 
 
 @router.put("/comments/{comment_id}", response_model=CommentResponse)

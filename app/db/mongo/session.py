@@ -14,7 +14,17 @@ _db: AsyncIOMotorDatabase | None = None
 def get_client() -> AsyncIOMotorClient:
     global _client
     if _client is None:
-        _client = AsyncIOMotorClient(settings.MONGODB_URL)
+        _client = AsyncIOMotorClient(
+            settings.MONGODB_URL,
+            maxPoolSize=50,
+            minPoolSize=10,
+            maxIdleTimeMS=30000,
+            connectTimeoutMS=10000,
+            socketTimeoutMS=30000,
+            serverSelectionTimeoutMS=10000,
+            retryWrites=True,
+            w="majority",
+        )
     return _client
 
 
@@ -52,6 +62,12 @@ async def init_indexes() -> None:
     await db["watch_history"].create_index(
         [("user_id", 1), ("last_watched_at", -1)]
     )
+    # TTL : suppression automatique des entrées après 90 jours d'inactivité
+    await db["watch_history"].create_index(
+        "last_watched_at",
+        expireAfterSeconds=7_776_000,  # 90 jours
+        name="ttl_watch_history_90d",
+    )
 
     # ── content_meta ─────────────────────────────────────────────────────────
     # Un seul document de métadonnées enrichies par contenu PostgreSQL
@@ -64,6 +80,13 @@ async def init_indexes() -> None:
     # ── concert_streams ───────────────────────────────────────────────────────
     # Un seul document de stream par concert PostgreSQL
     await db["concert_streams"].create_index("concert_id", unique=True)
+
+    # ── messages (DM) ─────────────────────────────────────────────────────────
+    # Recherche d'une conversation entre deux utilisateurs
+    await db["messages"].create_index([("sender_id", 1),   ("receiver_id", 1), ("created_at", -1)])
+    await db["messages"].create_index([("receiver_id", 1), ("sender_id", 1),   ("created_at", -1)])
+    # Messages non lus reçus par un utilisateur
+    await db["messages"].create_index([("receiver_id", 1), ("read", 1)])
 
 
 async def check_connection() -> bool:

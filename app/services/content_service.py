@@ -2,6 +2,7 @@ import uuid
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 from fastapi import HTTPException
 
 from app.db.postgres.models.content import Content, ContentType, ContentStatus
@@ -23,7 +24,11 @@ class ContentService:
 
     @staticmethod
     async def get_film(content_id: uuid.UUID, db: AsyncSession) -> Content:
-        result = await db.execute(select(Content).where(Content.id == content_id, Content.type == ContentType.film))
+        result = await db.execute(
+            select(Content)
+            .options(selectinload(Content.seasons))
+            .where(Content.id == content_id, Content.type == ContentType.film)
+        )
         film = result.scalar_one_or_none()
         if not film:
             raise HTTPException(status_code=404, detail="Film non trouvé")
@@ -46,7 +51,11 @@ class ContentService:
 
     @staticmethod
     async def get_serie(content_id: uuid.UUID, db: AsyncSession) -> Content:
-        result = await db.execute(select(Content).where(Content.id == content_id, Content.type == ContentType.serie))
+        result = await db.execute(
+            select(Content)
+            .options(selectinload(Content.seasons).selectinload(Season.episodes))
+            .where(Content.id == content_id, Content.type == ContentType.serie)
+        )
         serie = result.scalar_one_or_none()
         if not serie:
             raise HTTPException(status_code=404, detail="Série non trouvée")

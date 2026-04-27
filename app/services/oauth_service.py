@@ -133,7 +133,8 @@ class OAuthService:
 
 
 def _build_tokens(user: User) -> dict:
-    payload = {"sub": str(user.id), "role": user.role.value}
+    _role = user.role.value if hasattr(user.role, 'value') else user.role
+    payload = {"sub": str(user.id), "role": _role}
     return {
         "access_token": create_access_token(payload),
         "refresh_token": create_refresh_token(payload),

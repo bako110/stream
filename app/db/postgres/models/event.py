@@ -1,7 +1,8 @@
 import uuid
 import enum
 from datetime import datetime
-from sqlalchemy import String, Integer, Boolean, Enum, ForeignKey, DateTime, Numeric, Text
+from sqlalchemy import String, Integer, Boolean, Enum, ForeignKey, DateTime, Numeric, Text, Index, Float
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -50,6 +51,8 @@ class Event(Base):
     venue_country: Mapped[str] = mapped_column(String(100), nullable=False)
     is_online: Mapped[bool] = mapped_column(Boolean, default=False)
     online_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # Dates
     starts_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
@@ -63,6 +66,8 @@ class Event(Base):
     # Médias
     thumbnail_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     banner_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    gallery_urls: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=list)
+    video_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     is_featured: Mapped[bool] = mapped_column(Boolean, default=False)
     published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -71,6 +76,16 @@ class Event(Base):
 
     organizer: Mapped["User"] = relationship("User", foreign_keys=[organizer_id])
     tickets: Mapped[list] = relationship("EventTicket", back_populates="event", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("ix_events_status",           "status"),
+        Index("ix_events_starts_at",        "starts_at"),
+        Index("ix_events_event_type",       "event_type"),
+        Index("ix_events_organizer_id",     "organizer_id"),
+        Index("ix_events_venue_city",       "venue_city"),
+        Index("ix_events_status_starts_at", "status", "starts_at"),
+        Index("ix_events_event_type_city",  "event_type", "venue_city"),
+    )
 
     def __repr__(self):
         return f"<Event {self.title} [{self.event_type}] {self.starts_at}>"

@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import datetime
-from sqlalchemy import String, Enum, ForeignKey, DateTime, Numeric, Text
+from sqlalchemy import String, Enum, ForeignKey, DateTime, Numeric, Text, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 
@@ -43,6 +43,15 @@ class Payment(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user: Mapped["User"] = relationship("User")
+
+    __table_args__ = (
+        Index("ix_payments_user_id", "user_id"),
+        Index("ix_payments_payment_type", "payment_type"),
+        Index("ix_payments_status", "status"),
+        Index("ix_payments_stripe_payment_intent_id", "stripe_payment_intent_id"),
+        Index("ix_payments_created_at", "created_at"),
+        Index("ix_payments_user_status", "user_id", "status"),
+    )
 
     def __repr__(self):
         return f"<Payment {self.payment_type} {self.amount}{self.currency} [{self.status}]>"

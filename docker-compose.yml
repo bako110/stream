@@ -1,0 +1,67 @@
+version: '3.9'
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: stream_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: stream
+      POSTGRES_PASSWORD: stream123
+      POSTGRES_DB: streaming
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  mongo:
+    image: mongo:7
+    container_name: stream_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  redis:
+    image: redis:7-alpine
+    container_name: stream_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stream_app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app
+      - uploads_data:/var/www/uploads
+    environment:
+      PYTHONUNBUFFERED: "1"
+      DATABASE_URL: postgresql+asyncpg://stream:stream123@postgres:5432/streaming
+      MONGODB_URL: mongodb://mongo:27017
+      MONGODB_DB_NAME: streaming_media
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: change-this-secret-key
+      JWT_REFRESH_SECRET_KEY: streaming_plateform_refresh_secret_2026
+      UPLOAD_DIR: /var/www/uploads
+      MEDIA_BASE_URL: http://localhost:8000
+    depends_on:
+      - postgres
+      - mongo
+      - redis
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  postgres_data:
+  mongo_data:
+  redis_data:
+  uploads_data:

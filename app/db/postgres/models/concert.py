@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import datetime
-from sqlalchemy import String, Integer, Boolean, Enum, ForeignKey, DateTime, Numeric, Text
+from sqlalchemy import String, Integer, Boolean, Enum, ForeignKey, DateTime, Numeric, Text, Index, Float
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -41,6 +41,8 @@ class Concert(Base):
     venue_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     venue_city: Mapped[str | None] = mapped_column(String(100), nullable=True)
     venue_country: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     scheduled_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     duration_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
     concert_type: Mapped[ConcertType] = mapped_column(Enum(ConcertType), nullable=False)
@@ -52,6 +54,7 @@ class Concert(Base):
     view_count: Mapped[int] = mapped_column(Integer, default=0)
     thumbnail_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     banner_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    video_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     is_featured: Mapped[bool] = mapped_column(Boolean, default=False)
     published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -59,6 +62,16 @@ class Concert(Base):
 
     artist: Mapped["User"] = relationship("User", foreign_keys=[artist_id])
     tickets: Mapped[list] = relationship("Ticket", back_populates="concert", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("ix_concerts_status",        "status"),
+        Index("ix_concerts_scheduled_at",  "scheduled_at"),
+        Index("ix_concerts_artist_id",     "artist_id"),
+        Index("ix_concerts_genre",         "genre"),
+        Index("ix_concerts_venue_city",    "venue_city"),
+        Index("ix_concerts_status_sched",  "status", "scheduled_at"),
+        Index("ix_concerts_genre_status",  "genre", "status"),
+    )
 
     def __repr__(self):
         return f"<Concert {self.title} [{self.status}]>"

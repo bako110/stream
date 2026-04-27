@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import datetime, date
-from sqlalchemy import String, Boolean, Enum, DateTime, Date
+from sqlalchemy import String, Boolean, Enum, DateTime, Date, Index
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -60,11 +60,31 @@ class User(Base):
     oauth_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     oauth_access_token: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
+    # ── Confidentialité ────────────────────────────────────────────────────────
+    privacy_profile_public:  Mapped[bool] = mapped_column(Boolean, default=True)
+    privacy_show_activity:   Mapped[bool] = mapped_column(Boolean, default=True)
+    privacy_show_location:   Mapped[bool] = mapped_column(Boolean, default=True)
+    privacy_allow_messages:  Mapped[bool] = mapped_column(Boolean, default=True)
+    privacy_show_online:     Mapped[bool] = mapped_column(Boolean, default=True)
+    privacy_show_phone:      Mapped[bool] = mapped_column(Boolean, default=False)
+    privacy_show_birthday:   Mapped[bool] = mapped_column(Boolean, default=True)
+
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_users_email", "email"),
+        Index("ix_users_username", "username"),
+        Index("ix_users_role", "role"),
+        Index("ix_users_is_active", "is_active"),
+        Index("ix_users_created_at", "created_at"),
+    )
 
     def __repr__(self):
         return f"<User {self.email} ({self.role})>"

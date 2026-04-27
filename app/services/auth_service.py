@@ -5,7 +5,7 @@ from sqlalchemy import select, or_
 from fastapi import HTTPException
 
 from app.db.postgres.models.user import User
-from app.schemas.user import UserRegister, LoginRequest
+from app.schemas.user import UserRegister, LoginRequest, UserResponse
 from app.utils.password import hash_password, verify_password
 from app.utils.jwt import create_access_token, create_refresh_token, decode_refresh_token
 
@@ -14,45 +14,63 @@ def _is_email(value: str) -> bool:
     return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", value))
 
 
-def _generate_username(email: str, first_name: str, last_name: str) -> str:
-    """Génère un username depuis prénom+nom en snake_case."""
+def _is_phone(value: str) -> bool:
+    digits = re.sub(r"\D", "", value)
+    return len(digits) >= 8
+
+
+def _normalize_phone(value: str) -> str:
+    return re.sub(r"\D", "", value)
+
+
+def _generate_username(base_hint: str, first_name: str, last_name: str) -> str:
+    """Génère un username depuis prénom+nom."""
     base = f"{first_name.lower()}{last_name.lower()}"
-    # garder uniquement alphanum + underscore
     base = re.sub(r"[^a-z0-9]", "", base)
     if not base:
-        base = email.split("@")[0]
-    return base[:30]
+        base = re.sub(r"[^a-z0-9]", "", base_hint.lower())[:15]
+    return base[:30] if base else "user"
 
 
 class AuthService:
 
     @staticmethod
     async def register(payload: UserRegister, db: AsyncSession) -> User:
-        # Vérif email unique
-        if (await db.execute(select(User).where(User.email == payload.email))).scalar_one_or_none():
-            raise HTTPException(status_code=400, detail="Email déjà utilisé")
+        # ── Vérif unicité email / phone ────────────────────────────────────────
+        if payload.email:
+            if (await db.execute(select(User).where(User.email == payload.email))).scalar_one_or_none():
+                raise HTTPException(status_code=400, detail="Email déjà utilisé")
 
-        # Résolution du username
+        phone_normalized: str | None = None
+        if payload.phone:
+            phone_normalized = _normalize_phone(payload.phone)
+            if (await db.execute(select(User).where(User.phone == phone_normalized))).scalar_one_or_none():
+                raise HTTPException(status_code=400, detail="Numéro de téléphone déjà utilisé")
+
+        # ── Email interne si inscription par phone uniquement ──────────────────
+        email = payload.email
+        if not email:
+            email = f"phone_{phone_normalized}@folix.internal"
+
+        # ── Résolution username ────────────────────────────────────────────────
         username = payload.username
         if username:
-            # Vérif unicité si fourni
             if (await db.execute(select(User).where(User.username == username))).scalar_one_or_none():
                 raise HTTPException(status_code=400, detail="Username déjà utilisé")
         else:
-            # Auto-génération depuis prénom+nom
-            base = _generate_username(payload.email, payload.first_name, payload.last_name)
+            hint = payload.email or phone_normalized or "user"
+            base = _generate_username(hint, payload.first_name, payload.last_name)
             username = base
-            # Rendre unique si collision
             counter = 1
             while (await db.execute(select(User).where(User.username == username))).scalar_one_or_none():
                 username = f"{base}{counter}"
                 counter += 1
 
-        # display_name = "Prénom Nom"
         display_name = f"{payload.first_name.strip()} {payload.last_name.strip()}"
 
         user = User(
-            email=payload.email,
+            email=email,
+            phone=phone_normalized,
             username=username,
             first_name=payload.first_name.strip(),
             last_name=payload.last_name.strip(),
@@ -68,9 +86,12 @@ class AuthService:
     async def login(payload: LoginRequest, db: AsyncSession) -> dict:
         identifier = payload.identifier.strip()
 
-        # Chercher par email OU par username
+        # Chercher par email, username ou téléphone
         if _is_email(identifier):
             result = await db.execute(select(User).where(User.email == identifier))
+        elif _is_phone(identifier):
+            phone_normalized = _normalize_phone(identifier)
+            result = await db.execute(select(User).where(User.phone == phone_normalized))
         else:
             result = await db.execute(select(User).where(User.username == identifier))
 
@@ -79,15 +100,18 @@ class AuthService:
         if not user or not user.password_hash or not verify_password(payload.password, user.password_hash):
             raise HTTPException(status_code=401, detail="Identifiant ou mot de passe incorrect")
         if not user.is_active:
-            raise HTTPException(status_code=403, detail="Compte désactivé")
+            detail = "Ce compte a été supprimé" if getattr(user, 'is_deleted', False) else "Compte désactivé"
+            raise HTTPException(status_code=403, detail=detail)
 
         user.last_login_at = datetime.utcnow()
         await db.commit()
 
-        token_data = {"sub": str(user.id), "role": user.role.value}
+        _role = user.role.value if hasattr(user.role, 'value') else user.role
+        token_data = {"sub": str(user.id), "role": _role}
         return {
             "access_token": create_access_token(token_data),
             "refresh_token": create_refresh_token(token_data),
+            "user": UserResponse.model_validate(user),
         }
 
     @staticmethod
@@ -100,7 +124,8 @@ class AuthService:
         if not user or not user.is_active:
             raise HTTPException(status_code=401, detail="Utilisateur introuvable ou inactif")
 
-        token_data = {"sub": str(user.id), "role": user.role.value}
+        _role = user.role.value if hasattr(user.role, 'value') else user.role
+        token_data = {"sub": str(user.id), "role": _role}
         return {
             "access_token": create_access_token(token_data),
             "refresh_token": create_refresh_token(token_data),

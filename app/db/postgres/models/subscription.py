@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import datetime
-from sqlalchemy import String, Boolean, Enum, ForeignKey, DateTime, Numeric, Integer
+from sqlalchemy import String, Boolean, Enum, ForeignKey, DateTime, Numeric, Integer, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -50,6 +50,16 @@ class Subscription(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user: Mapped["User"] = relationship("User")
+
+    __table_args__ = (
+        Index("ix_subscriptions_user_id", "user_id"),
+        Index("ix_subscriptions_plan", "plan"),
+        Index("ix_subscriptions_status", "status"),
+        Index("ix_subscriptions_stripe_subscription_id", "stripe_subscription_id"),
+        Index("ix_subscriptions_current_period_end", "current_period_end"),
+        Index("ix_subscriptions_created_at", "created_at"),
+        Index("ix_subscriptions_user_status", "user_id", "status"),
+    )
 
     @property
     def is_active(self) -> bool:

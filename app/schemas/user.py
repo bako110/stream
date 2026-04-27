@@ -1,4 +1,5 @@
-from pydantic import BaseModel, EmailStr, UUID4, field_validator, HttpUrl
+import re
+from pydantic import BaseModel, EmailStr, UUID4, field_validator, model_validator
 from typing import Optional
 from datetime import datetime, date
 
@@ -10,14 +11,16 @@ from app.db.postgres.models.user import UserRole, Gender
 class UserRegister(BaseModel):
     """
     Inscription classique.
-    - first_name, last_name, email, password : obligatoires
-    - username : optionnel (auto-généré depuis email si absent)
+    - first_name, last_name, password : obligatoires
+    - email OU phone : au moins l'un des deux requis
+    - username : optionnel (auto-généré si absent)
     """
     first_name: str
-    last_name: str
-    email: EmailStr
-    password: str
-    username: Optional[str] = None
+    last_name:  str
+    email:      Optional[EmailStr] = None
+    phone:      Optional[str]      = None
+    password:   str
+    username:   Optional[str]      = None
 
     @field_validator("first_name", "last_name")
     @classmethod
@@ -26,6 +29,16 @@ class UserRegister(BaseModel):
         if len(v) < 2:
             raise ValueError("Doit faire au moins 2 caractères")
         return v
+
+    @field_validator("phone")
+    @classmethod
+    def phone_valid(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        digits = re.sub(r"\D", "", v)
+        if len(digits) < 8:
+            raise ValueError("Numéro de téléphone invalide (8 chiffres minimum)")
+        return digits
 
     @field_validator("username")
     @classmethod
@@ -45,6 +58,10 @@ class UserRegister(BaseModel):
         if len(v) < 8:
             raise ValueError("Le mot de passe doit faire au moins 8 caractères")
         return v
+
+    def model_post_init(self, __context: object) -> None:
+        if not self.email and not self.phone:
+            raise ValueError("Email ou numéro de téléphone requis")
 
 
 # Alias pour compatibilité
@@ -108,7 +125,7 @@ class UserResponse(BaseModel):
     is_verified: bool
     is_active: bool
     oauth_provider: Optional[str] = None
-    created_at: datetime
+    created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
@@ -130,14 +147,40 @@ class UserPublic(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class UserPublicProfile(UserPublic):
+    """Profil public enrichi avec compteurs follow."""
+    followers_count:  int = 0
+    following_count:  int = 0
+    is_followed:      bool = False
+    is_verified:      bool = False
+    phone:            Optional[str] = None
+    date_of_birth:    Optional[date] = None
+    gender:           Optional[str] = None
+    created_at:       Optional[datetime] = None
+
+
+# ─── Confidentialité ──────────────────────────────────────────────────────────
+
+class PrivacySettings(BaseModel):
+    privacy_profile_public:  bool = True
+    privacy_show_activity:   bool = True
+    privacy_show_location:   bool = True
+    privacy_allow_messages:  bool = True
+    privacy_show_online:     bool = True
+    privacy_show_phone:      bool = False
+    privacy_show_birthday:   bool = True
+
+    model_config = {"from_attributes": True}
+
+
 # ─── Auth ─────────────────────────────────────────────────────────────────────
 
 class LoginRequest(BaseModel):
     """
-    Connexion avec email OU username + mot de passe.
-    - identifier : email ou username
+    Connexion avec email, username OU numéro de téléphone + mot de passe.
+    - identifier : email, username ou numéro de téléphone
     """
-    identifier: str      # email ou username
+    identifier: str      # email, username ou phone
     password: str
 
 
@@ -145,6 +188,11 @@ class Token(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+
+
+class LoginResponse(Token):
+    """Réponse login = tokens + user (évite un appel /me supplémentaire)."""
+    user: UserResponse
 
 
 class TokenRefresh(BaseModel):
