@@ -79,11 +79,6 @@ async def list_films(
     return result
 
 
-@router.get("/films/{content_id}", response_model=ContentResponse)
-async def get_film(content_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    return await ContentService.get_film(content_id, db)
-
-
 # ── Films — admin list (draft + published) ────────────────────────────────────
 
 @router.get("/films/admin", response_model=ContentListResponse)
@@ -95,6 +90,11 @@ async def list_films_admin(
 ):
     result = await ContentService.list_films(page, limit, None, None, db, admin=True)
     return result
+
+
+@router.get("/films/{content_id}", response_model=ContentResponse)
+async def get_film(content_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    return await ContentService.get_film(content_id, db)
 
 
 # ── Films — admin ─────────────────────────────────────────────────────────────
@@ -169,11 +169,6 @@ async def list_series(
     return result
 
 
-@router.get("/series/{content_id}", response_model=ContentResponse)
-async def get_serie(content_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    return await ContentService.get_serie(content_id, db)
-
-
 # ── Séries — admin list (draft + published) ───────────────────────────────────
 
 @router.get("/series/admin", response_model=ContentListResponse)
@@ -185,6 +180,11 @@ async def list_series_admin(
 ):
     result = await ContentService.list_series(page, limit, db, admin=True)
     return result
+
+
+@router.get("/series/{content_id}", response_model=ContentResponse)
+async def get_serie(content_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    return await ContentService.get_serie(content_id, db)
 
 
 # ── Séries — admin ────────────────────────────────────────────────────────────
