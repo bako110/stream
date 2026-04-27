@@ -29,6 +29,8 @@ class VideoCreate(BaseModel):
     is_default: bool = False
     sort_order: int = 0
     is_free: bool = False
+    hls_url: Optional[str] = None
+    duration_sec: Optional[int] = None
 
 
 # ─── Mise à jour partielle ────────────────────────────────────────────────────

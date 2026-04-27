@@ -41,18 +41,18 @@ class VideoService:
 
     @staticmethod
     async def _insert(base: dict, data: VideoCreate, mongo: AsyncIOMotorDatabase) -> dict:
+        payload = data.model_dump()
         doc = {
             **base,
-            **data.model_dump(),
-            "transcode_status": "pending",
-            "transcode_progress": 0,
-            "hls_url": None, "hls_480p_url": None,
+            "transcode_status": "ready" if payload.get("hls_url") else "pending",
+            "transcode_progress": 100 if payload.get("hls_url") else 0,
+            "hls_480p_url": None,
             "hls_720p_url": None, "hls_1080p_url": None,
-            "duration_sec": None,
             "raw_s3_key": None, "file_size_bytes": None, "original_filename": None,
             "subtitles": [],
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow(),
+            **payload,
         }
         result = await mongo["videos"].insert_one(doc)
         doc["_id"] = result.inserted_id
