@@ -12,6 +12,7 @@ from app.db.postgres.session import init_db, check_connection as pg_check
 from app.db.mongo.session import init_indexes, check_connection as mongo_check, close as mongo_close
 from app.utils.cache import get_redis
 from app.services.ws_manager import init_redis_relay, stop_redis_relay
+from app.utils.cache import close_redis
 
 
 async def _check_mongo() -> bool:
@@ -86,6 +87,7 @@ async def lifespan(app: FastAPI):
     yield
 
     await stop_redis_relay()
+    await close_redis()
     if bg_task and not bg_task.done():
         bg_task.cancel()
     await mongo_close()
