@@ -90,7 +90,15 @@ async def get_user_suggestions(
     current_user: User = Depends(get_current_active_user),
 ):
     """Suggestions d'utilisateurs à suivre — amis de mes amis, puis aléatoires. Paginé via offset."""
-    return await UserService.suggest_users(current_user.id, db, limit=limit, offset=offset)
+    from app.services.ws_manager import manager as ws_manager
+    users = await UserService.suggest_users(current_user.id, db, limit=limit, offset=offset)
+    result = []
+    for u in users:
+        pub = UserPublic.model_validate(u)
+        if u.privacy_show_online:
+            pub.is_online = ws_manager.is_online(str(u.id))
+        result.append(pub)
+    return result
 
 
 @router.get("/me/history")

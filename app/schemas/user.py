@@ -147,6 +147,7 @@ class UserPublic(BaseModel):
     location: Optional[str] = None
     website: Optional[str] = None
     is_verified: bool = False
+    is_online: Optional[bool] = None
 
     model_config = {"from_attributes": True}
 
