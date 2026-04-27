@@ -111,12 +111,22 @@ def _ffprobe_duration(video_path: Path) -> float | None:
 
 
 def _ffmpeg_thumbnail(video_path: Path, thumb_path: Path) -> bool:
-    """Extrait une frame à 1s en JPEG. Retourne True si succès."""
+    """Extrait une frame à 10% de la durée en JPEG qualité maximale."""
     try:
+        # Récupère la durée d'abord pour prendre une frame à 10%
+        dur = _ffprobe_duration(video_path)
+        seek = max(1.0, (dur or 10.0) * 0.1)
         result = subprocess.run(
-            ["ffmpeg", "-y", "-ss", "1", "-i", str(video_path),
-             "-frames:v", "1", "-q:v", "3", str(thumb_path)],
-            capture_output=True, timeout=30,
+            [
+                "ffmpeg", "-y",
+                "-ss", str(seek),
+                "-i", str(video_path),
+                "-frames:v", "1",
+                "-q:v", "1",          # qualité JPEG maximale (1=max, 31=min)
+                "-vf", "scale=iw:ih", # garde la résolution native
+                str(thumb_path),
+            ],
+            capture_output=True, timeout=60,
         )
         return result.returncode == 0 and thumb_path.exists()
     except Exception:
